@@ -1,0 +1,1443 @@
+
+#Pauli Tikka, scRNAseq Seurat analysis pipeline for 10X data, ver 4.6.2021 enhanced in 7.2.2022, and reenahnced in 16822.
+#The idea of re-enhancing is to take doublet and dendogram clusterings (see:
+# https://raw.githack.com/bicciatolab/popsicleR/main/docs/popsicleR_tutorial.html
+# https://www.singlecellcourse.org/) and compile other analysis made earlier in a single file  .
+# https://bookdown.org/ytliu13207/SingleCellMultiOmicsDataAnalysis
+#First install Seurat preferably in R studio, you may need to install many things
+#Installations needed if starting from scratch or after re-installing R&RStudio&Rtools (e.g. for installing a new package):
+#First install all the programs suggested by Rstudion, then:
+# BiocManager::install(c("affy","BSgenome", 'eisaR', 'LoomExperiment','SMITE','zellkonverter','org.Mm.eg.db','IntEREst','glmGamPoi','affyio','ArrayExpress','destiny','slingshot'));
+# BiocManager::install(c('BiocGenerics', 'DelayedArray', 'DelayedMatrixStats','limma', 'lme4', 'S4Vectors', 'SingleCellExperiment','SummarizedExperiment', 'batchelor','clustifyr','Matrix.utils','HDF5Array', 'terra', 'ggrastr'));
+# install.packages('Seurat'); install.packages("devtools");devtools::install_github('colearendt/xlsx')
+# devtools::install_github('cole-trapnell-lab/monocle3', ref="develop")#, but not work with either
+# devtools::install_github('satijalab/seurat-data')
+# remotes::install_github("mojaveazure/seurat-disk",force = TRUE);
+# remotes::install_github('satijalab/seurat-wrappers')
+# devtools::install_github("aertslab/SCopeLoomR")
+# devtools::install_github("YosefLab/VISION")
+# remotes::install_github("satijalab/sctransform", ref="develop")
+# install.packages('ggplot2'); install.packages('viridis'); install.packages('jsonlite')
+# devtools::install_github(repo = "mojaveazure/loomR", ref = "develop")
+# Sys.unsetenv("GITHUB_PAT") #https://community.rstudio.com/t/unable-to-install-packages-from-github/124372
+# install.packages('vctrs')
+#Loading the packages presented compactly:
+library(rlang); library(BSgenome);library(eisaR);library(GenomicFeatures);library(tximeta);library(rjson);library(reticulate);library(scater);
+library("monocle3");library(jsonlite);library(R6);library(loomR);library(LoomExperiment); library(SeuratDisk);
+library(Seurat);library(SeuratData);library(SCopeLoomR);library(biomaRt);library(singleCellTK);library(VISION)
+library(SMITE);library(zellkonverter);library(scRNAseq);library(org.Mm.eg.db);library(AnnotationDbi);library(IntEREst);
+library(scMerge);library(dplyr);library("htmltools");library(R.utils);library(xlsx);# library(monocle);
+library(scrubletR);library(m3addon);suppressMessages(require(DoubletFinder));library(scDblFinder)
+library(SeuratWrappers);library(patchwork);library(popsicleR);library(SeuratDisk);library(rhdf5);
+library(tidyverse);library(sleepwalk);library(umap);library(BiocIO);library(rhdf5);library(MASS);library(gplots);library(SCINA);
+library(hdf5r);library(stringi);library(Rcpp);library(harmony);library(limma);library(stats4);library(parallel);library(BiocGenerics);library(S4Vectors);
+library(IRanges);library(GenomeInfoDb);library(GenomicRanges);library(Matrix);library(Biobase);library(matrixStats);library(MatrixGenerics);library(SummarizedExperiment);
+library(SingleCellExperiment);library(DESeq2);library(usethis);library(devtools);library(reshape2);library(PRROC);library(WriteXLS);library(rpart);library(rpart.plot)
+set.seed(1234);library(stringr);library(rlist);library(gdata);library(splines);library(factoextra);library(cluster);library(VGAM);library(scuttle);library(scran);library(scater)
+library(glmGamPoi);library(RColorBrewer);library(ggplot2);library(bit);library(bit64);library(stats4);library(lattice)
+library(Rmisc);library(XVector);library(Biostrings);library(Rsamtools);library(Signac);library(shiny);library(Matrix);library(patchwork)
+library("org.Hs.eg.db");library("org.Mm.eg.db");library(grid);library(ComplexHeatmap);library(RColorBrewer);library(circlize);
+library(base);library(Matrix);library(namespace);library(BH) ;library(conos);library(affyio);library(ArrayExpress);library(oligo);
+library(runjags);library(ggthemes);library(ggbeeswarm);library(destiny);library(slingshot);library(gtools);library(ggraph);library(clustree)
+require(scales);require(scran);require(cowplot);library(sctransform);library(affy); library(clustifyr)
+library(BiocManager);library(usethis);library(devtools);library(leidenbase);library(scDblFinder);library(parallelDist);library(ggvenn)
+
+#1) Set the working directory and load the data:
+#it is good to put one data 'type' as a folder:
+setwd(dir='D:/Data for Seurat Analysis/filtered_gene_bc_matrices/Data Filtered and Processed in Seurat/lapimeno') #amap stands for 'as much as possible'
+#Last spring (2021) data:
+
+#e 11... the below would better be a function:
+pbmc1.data <- Read10X_h5("G:/Pauli_General/Raw_new2810/E11-16 Open/E11.5_May21/mandible1_count/outs/filtered_feature_bc_matrix.h5")
+p11_1 <- CreateSeuratObject(counts = pbmc1.data, project = "E11.5_1", min.cells = 3, min.features = 200)
+pbmc2.data <- Read10X_h5("G:/Pauli_General/Raw_new2810/E11-16 Open/E11.5_May21/mandible2_count/outs/filtered_feature_bc_matrix.h5")
+p11_2 <- CreateSeuratObject(counts = pbmc2.data, project = "E11.5_2", min.cells = 3, min.features = 200)
+pbmc3.data <- Read10X_h5("G:/Pauli_General/Raw_new2810/E11-16 Open/E11.5_May21/mandible3_count/outs/filtered_feature_bc_matrix.h5")
+p11_3 <- CreateSeuratObject(counts = pbmc3.data, project = "E11.5_3", min.cells = 3, min.features = 200)
+pbmc4.data <- Read10X_h5("G:/Pauli_General/Raw_new2810/E11-16 Open/E11.5_May21/mandible4_count/outs/filtered_feature_bc_matrix.h5")
+p11_4 <- CreateSeuratObject(counts = pbmc4.data, project = "E11.5_4", min.cells = 3, min.features = 200)
+#Last autumn (2021) data:
+#e 11
+p11_5d <- Read10X_h5("G:/Pauli_General/Raw_new2810/E11-16 Open/e16_Oct21/1_count/outs/filtered_gene_bc_matrix.h5")
+p11_5 <- CreateSeuratObject(counts = p11_5d, project = "E11.5_5", min.cells = 3, min.features = 200)
+p11_6d <- Read10X_h5("G:/Pauli_General/Raw_new2810/E11-16 Open/e16_Oct21/2_count/outs/filtered_feature_bc_matrix.h5")
+p11_6 <- CreateSeuratObject(counts = p11_6d, project = "E11.5_6", min.cells = 3, min.features = 200)
+p11_7d <- Read10X_h5("G:/Pauli_General/Raw_new2810/E11-16 Open/e16_Oct21/3_count/outs/filtered_feature_bc_matrix.h5")
+p11_7 <- CreateSeuratObject(counts = p11_7d, project = "E11.5_7", min.cells = 3, min.features = 200)
+p11_8d <- Read10X_h5("G:/Pauli_General/Raw_new2810/E11-16 Open/e16_Oct21/4_count/outs/filtered_feature_bc_matrix.h5")
+p11_8 <- CreateSeuratObject(counts = p11_8d, project = "E11.5_8", min.cells = 3, min.features = 200)
+#E14
+pbmc1l.data <- Read10X_h5("G:/Pauli_General/Raw_new2810/E11-16 Open/E16.5_May21/1_1_count/outs/filtered_feature_bc_matrix.h5")
+p14_1 <- CreateSeuratObject(counts = pbmc1l.data, project = "E16.5_1", min.cells = 3, min.features = 200)
+pbmc2l.data <- Read10X_h5("G:/Pauli_General/Raw_new2810/E11-16 Open/E16.5_May21/1_2_count/outs/filtered_feature_bc_matrix.h5")
+p14_2 <- CreateSeuratObject(counts = pbmc2l.data, project = "E16.5_2", min.cells = 3, min.features = 200)
+pbmc3l.data <- Read10X_h5("G:/Pauli_General/Raw_new2810/E11-16 Open/E16.5_May21/1_count/outs/filtered_feature_bc_matrix.h5")
+p14_3 <- CreateSeuratObject(counts = pbmc3l.data, project = "E16.5_3", min.cells = 3, min.features = 200)
+pbmc4l.data <- Read10X_h5("G:/Pauli_General/Raw_new2810/E11-16 Open/E16.5_May21/2_count/outs/filtered_feature_bc_matrix.h5")
+p14_4 <- CreateSeuratObject(counts = pbmc4l.data, project = "E16.5_4", min.cells = 3, min.features = 200)
+# e14
+p14_5d <- Read10X_h5("G:/Pauli_General/Raw_new2810/E11-16 Open/E14.25 and E16_Oct21/E14-1_Oct21/outs/filtered_feature_bc_matrix.h5")
+p14_5 <- CreateSeuratObject(counts = p14_5d, project = "E16.5_5", min.cells = 3, min.features = 200)
+p14_6d <- Read10X_h5("G:/Pauli_General/Raw_new2810/E11-16 Open/E14.25 and E16_Oct21/E14-2_Oct21/outs/filtered_feature_bc_matrix.h5")
+p14_6 <- CreateSeuratObject(counts = p14_6d, project = "E16.5_6", min.cells = 3, min.features = 200)
+# e16
+p16_1d <- Read10X_h5("G:/Pauli_General/Raw_new2810/E11-16 Open/E14.25 and E16_Oct21/E16-1_Oct21/outs/filtered_feature_bc_matrix.h5")
+p16_1 <- CreateSeuratObject(counts = p16_1d, project = "E16.5_1", min.cells = 3, min.features = 200)
+p16_2d <- Read10X_h5("G:/Pauli_General/Raw_new2810/E11-16 Open/E14.25 and E16_Oct21/E16-2_Oct21/outs/filtered_feature_bc_matrix.h5")
+p16_2 <- CreateSeuratObject(counts = p16_2d, project = "E16.5_2", min.cells = 3, min.features = 200)
+
+#I rather put everything that leave away
+gc(); rm(pbmc1.data,pbmc2.data,pbmc3.data,pbmc4.data,pbmc1l.data,pbmc2l.data,pbmc3l.data,pbmc4l.data,p11_5d,p11_6d,p11_7d,p11_8d,p14_5d,p14_6d,p16_1d,p16_2d)
+#Merging Works like this: # https://satijalab.org/signac/articles/merging.html
+data <- merge(p11_1, y = c(p11_2,p11_3,p11_4,p11_5,p11_6,p11_7,p11_8), project = "E11.5");gc(); #add.cell.ids = c("Later1", "Later2", "Later3", "Later4"),
+dataa <- merge(p14_1, y = c(p14_2,p14_3,p14_4,p14_5,p14_6), project = "E14.25")
+dataaa <- merge(p16_1, y = c(p16_2), project = "E16.5");gc();
+# DataList <- SplitObject(data, split.by = "orig.ident"); DataList #remove samples that have less than around 100 cells, since they are hard to integrate
+data <- merge(p11_1, y = c(p11_2,p11_3,p11_4,p11_5,p11_7), project = "E11.5");gc(); #add.cell.ids = c("Later1", "Later2", "Later3", "Later4"),
+
+data=dataaa
+DefaultAssay(data)='RNA' #or dataa...
+
+#Before you have anything analysed, biologists want to know how many cells express the gene 'X' of interest in one (not all) of their experiments:
+# length(WhichCells(data, slot = 'data', expression = Sox2 > 0 & Pitx2)) #This is exclusive, both have to occure.. so not work..
+length(WhichCells(data, slot = 'data', expression = Pitx2 > 0))#raw:868/424
+length(WhichCells(data, slot = 'data', expression = Sox2 > 0))#raw:487/135
+length(WhichCells(data, slot = 'data', expression = Shh > 0))#raw:196/28
+data # https://satijalab.org/seurat/articles/essential_commands.html
+
+# This is a gene & cell filtering function needed before analyses
+  # The input of this function is your merged seurat object and name for saving it,
+# and output the filtered (and saved) seurat data object (+image) ready for normalization: Ok denotes the good sample numbers
+name='data_e16_prefilter_tikka281122.rds'
+saveRDS(data, file = name)
+
+Pre_anal_process=function(data,folder,urgency) {
+  #General variables in testing:
+  # name='data_e16_filter_ok_tikka281122'
+  # folder='D:/Data for Seurat Analysis/filtered_gene_bc_matrices/Data Filtered and Processed in Seurat/lapimeno'
+  # status='hurry' #or leisure
+  # E11$orig.ident='E11.5'
+  #Renaming cells in Seurat is not straightforward, e.g. if you do not want to show cell identities with their sample 'tag' at the end of sequence:
+  ok1=colnames(data); ok11=substr(ok1, 1, 16); data=RenameCells(data, new.names = make.names(ok11, unique=TRUE) )
+  lista1 <- SplitObject(data, split.by = "orig.ident"); pituus=c()
+  for (i in 1:length(lista1)) {pituus=append(pituus,length(lista1[[i]]$nCount_RNA)>30)}; samplesa=which(pituus)
+
+  #For Link AND HSP regression
+  ensembl <- useMart('ensembl', dataset = 'mmusculus_gene_ensembl') #The below works if ensemble looks like:
+  x=rownames(data@assays[["RNA"]]@meta.features)
+  genes.meta<-getBM(attributes=c("ensembl_gene_id", "mgi_symbol", "go_id", 'gene_biotype'), filters="mgi_symbol",values=x,mart=ensembl) #%%useCache=F, note this..
+  m <- match(rownames(data@assays[["RNA"]]@data), genes.meta$mgi_symbol)
+  data@assays[["RNA"]]@meta.features<-cbind(data@assays[["RNA"]]@meta.features,genes.meta[m,])
+
+  #Lnc filter ideas:
+  lnc= c("lncRNA")
+  RN_link_genes<-c(rownames(data[(data@assays[["RNA"]]@meta.features$gene_biotype %in% lnc),]))
+  C<-GetAssayData(object = data, slot = "counts"); Link <- colSums(C[RN_link_genes,])/Matrix::colSums(C)*100
+  data <- AddMetaData(data, Link, col.name = "percent.link") #Mes=c('Mpz') #
+
+  #Mitos, ribos, largest gene:
+  data[["percent.mt"]] <- PercentageFeatureSet(data, pattern = "^mt-")
+  data[["percent_ribo"]] <- PercentageFeatureSet(data, pattern ='^Rpl|^Rps|^Mrpl|^Mrps')
+  data$Percent.Largest.Gene=apply(data@assays$RNA@counts,2,function(x)(100*max(x))/sum(x))
+  #Filtering ribosomal genes:
+  # https://nbisweden.github.io/excelerate-scRNAseq/session-qc/Quality_control.html
+  # # https://nbisweden.github.io/workshop-scRNAseq/labs/compiled/scater/scater_01_qc.html
+
+  #HSP:s
+  HSP_genes<-genes.meta[genes.meta$go_id=="GO:0034605",]$mgi_symbol; hsp.genes <- rownames(data)[grep("^Hsp",rownames(data))]
+  HSP_genes=c(hsp.genes,HSP_genes); C<-GetAssayData(object = data, slot = "counts"); Hsp <- colSums(C[HSP_genes,])/Matrix::colSums(C)*100 # data <- AddModuleScore(object = data,features = list(HSP_genes),name = 'HSP.score')
+  data <- AddMetaData(data, Hsp, col.name = "percent.hsp") #Mes=c('Mpz') #
+
+  #Blood score:
+  hello=c("Tnnt1", "Tmsb4x", "Celf2", "Tpm2", "Tpm1", "Ebf1", "Abracl", "Ttn", "Pdgfa",
+          "Mrln", "Ptprd", "Lrrn1", "Ybx3", "Zeb2", "Tubb2b", "S100a10", "Nexn", "Hes1", "Sh3glb1", "Foxp1", "Ntng1",
+          "Ktn1", "Ccnd3", "Ppp3ca", "Cadm1", "Actr3", "Ccdc141", "Pgf", "Clcn5", "Zc3h15", "Tgfb2", "Fcer1g", "Tyrobp", "Arhgdib",
+          "Coro1a", "Ptpn18", "Lst1", "Arpc1b", "Laptm5", "Cyba", "Itm2b", "Mef2c", "Cst3", "Lcp1", "Cd52", "B2m", "Sh3bgrl3","H19",
+          "Tspo", "Sat1", "Apoe", "Arpc5", "Ctsc", "Tagln2", "Gpx1", "Rac2", "Clic1", "Fth1", "Ctsz", "Erp29", "Cotl1", "Cx3cr1", "Glipr2",
+          "Ddx21", "Ncl", "Actb", "Gng11", "Mif", "Mdk", "Tubb5", "H2afz", "Hmgb2", "Tmsb10", "Fau", "Tpt1", "Eef1a1", "Hmgb1","Col4a1","Col4a2",
+          "Fabp5","Pgk1","Arhgdib","Laptm5","Arpc1b","Meis2","Gap43","Mef2c","Itm2a", "Prrx1","Plxnd1","Kdr","Aldoa", 'Des') # Ptma", "Des",
+  #Let us take hb into account (28.6.21, tikka).. let us take them! (1.7.21)
+  hb.genes <- rownames(data)[grep("^Hb",rownames(data))]; hello=c(hello,hb.genes); hello=unique(hello); #length(hello) 102
+  #None of the blood genes should be epithelial ones:
+  krts2=rownames(data)[grep("^Krt",rownames(data))]; krts22=rownames(data)[grep("^Wnt",rownames(data))]
+  krts2=append(krts2, c("Epcam","Pitx2","Sox2","Foxi3","Sostdc1", "Dlx2", "Lef1", "p63", "Shh", "Noggin", "Sema3f",'Isl1', 'CD146', 'Nemo', 'Apc', 'Amel',
+                        "Fgf8", "Hh", "Axin2", "FzD6", "Sp6", "Edar","Tgfb1","Lgr5", "Dkk3", "Igfp5", "Sfn","Odam", 'Stro-1', 'Edaradd', 'Il11ra',
+                        "Fdcsp", "Slpi", "Odam", "Tuba1b", "Il1a", "Il1b", 'Pax9', 'Msx1', 'Msx2', 'Bmp2', 'Bmp4', 'Tbx3', 'Tbx2', 'Irf6', 'Irf6', 'Des',
+                        "Bmi1", "ABCG2", "Oct3/4", "Oct3", "Oct4","Yap", "Gli1", "Lrig1", "Fgf10", "p21", "Dkk4", "Fgf9", "Fgf20", 'Edar', 'Dsp', 'Dspp',
+                        'Ptma', 'Tpt1', 'Enam', 'Amelx','Mmp20', 'Amtn', 'Klk4', 'Dbi', 'Acta1','Actb','Pttg1', 'Atf3', 'Cldn10', 'Runx2',
+                        'Ambn','Sfrp5', 'Tbx1', 'Dmp1', 'Notch1', 'Notch2', 'Ccl12', 'Pttg1', 'Atf3', 'Trfc', 'Ntrk2', 'Foxa1', 'Foxa2',
+                        'Gjb6', 'Skap2', 'Lgr6', 'Lmo1', 'Gria2', 'Pcdh9', 'Kenh7', 'Lgals7', 'Pcp4l1', 'Npr3', 'Robo2', 'Kitl', 'Sic4a4', 'Cntn2', 'Unc5c', 'Rxfp1', 'Gjb2', 'Kcnj2',
+                        'Meis1', 'Col12a1', 'Timp3', 'Prss23', 'Ednrb', 'Ddit4l', 'Gad1', 'Sp5', 'Proser2', 'Pkp1', 'Ppl', 'Nebi', 'Marveld2', 'Tagln',
+                        'Acta2', 'Cpm', 'Dmrt2', 'Zcchc5', 'Rprm', 'Wisp1', 'Frnde1', 'Ntn1', 'Pax9', 'Foxc1',  'Hpca', 'Col14a1', 'Col9a1', 'Hpgd'))
+  #Possibly add new genes, check the article 2022 Ye et al
+  krts2=append(krts2,krts22); krts2n=length(unique(krts2)); sum(hello %in% krts2n) # i.e. should be zero
+  C<-GetAssayData(object = data, slot = "counts"); percent.blood <- colSums(C[hello,])/Matrix::colSums(C)*100
+  data <- AddMetaData(data, percent.blood, col.name = "percent.blood") #Mes=c('Mpz') #
+  # data <- AddModuleScore(object = data,features = list(hello),name = 'Blood.score')
+
+  #Housekeeping gene
+  #https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0098956
+  #https://www.nature.com/articles/s41598-021-82800-5#Sec2
+  #https://housekeeping.unicamp.br/?homePageMouse #http://www.ijdb.ehu.es/web/paper.php?doi=10.1387/ijdb.052130ew
+  #https://bmcgenomics.biomedcentral.com/articles/10.1186/1471-2164-8-127
+  #Bone, hema, and stem.. + the basics
+  # house=read.csv("house_genes2.csv", header = FALSE) #Check that you have the genes file in your folder! rownames(data)[grep("*actin",rownames(data))]
+  # house=as.list(house$V1); house=unlist(house); house=unique(house); house=rownames(C[rownames(C) %in% house,]) #With percentages you need to check that you have the genes!!
+  house=c("Col3a1", "Eef1b2", "Rpl37a", "Ptma", "Gas5", "H3f3a",  "Man1b1", "Set",  "Abl1", "Stam2",  "Hnrnpa3",      "Zfp106", "Serf2",  "B2m",  "Snrnp200",     "Csnk2a1",      "Gnas", "Sec62",  "Tpm3", "S100a4", "Atp5f1", "H2afz",  "Aco1", "Ybx1", "Ppih", "Sfpq", "Pum1", "Zdhhc18",      "Stmn1",  "Rer1",  "Srp72",  "Rplp0",  "Eif2b1", "Ubc",  "Chchd2", "Gusb", "Actb", "Flt1", "Hmgb1",  "Ptn",  "Hnrnpa2b1",    "Gadd45a",      "Mrpl19", "Snrpg",  "Rpl32", "Gapdh",  "Cdkn1b", "Ipo8", "Strn4",  "Psmc4",  "Rps16",  "Lsm14a", "Pop4", "Rpl13a", "Rpl18",  "Ldha", "Rps17",  "Ints4",  "1110004F10Rik","Gtf3c1", "Vps36",  "Calr", "Kars", "Cox4i1", "Hmbs", "Ddx6", "Edc3", "Rpl4", "Ppib", "Morf4l1",      "Oaz1", "Cactin", "Polr3b", "Tbk1", "Usp15",
+          "Naca",  "Pes1", "Ppia", "Sec61g", "Npm1", "Rack1",  "Ubb",  "Polr2a", "Cltc", "Nme2", "Casc3",  "Eif1", "Rpl27",  "Ddx5", "Rpl38", "H3f3b",  "Actg1",  "Brms1l", "Eif5", "Hnrnpk", "Sdha", "Cox7c",  "Btf3", "Dnajc9", "Sec24c", "Supt16", "Elf1", "Rpl37",  "Rpl30",  "Cox6c",
+          "Pabpc1", "Ywhaz",  "Cpsf1",  "Lgals1", "Ddx17",  "Cyp2d26",      "Pcbp2",  "Ubn1", "1810013L24Rik","Tfrc", "Snx4", "Hmgn1",  "Tbp",  "Atp6v0c",      "Hmga1", "Cdkn1a", "Rps18",  "Abcf1",  "Hsp90ab1",     "Taf4b",  "Iws1", "Eif1a",  "Fech", "Neat1",  "Ganab",  "Ddb1", "Mpp1", "Nono", "Pgk1", "Lgals12")
+  C<-GetAssayData(object = data, slot = "counts");
+  percent.house <- colSums(C[c(house),])/Matrix::colSums(C)*100
+  data <- AddMetaData(data, percent.house, col.name = "percent.house") #Mes=c('Mpz') #
+  ### calculate the percentage of dissociation genes
+  dissociation_genes <- c("Actg1","Ankrd1","Arid5a","Atf3","Atf4","Bag3","Bhlhe40","Brd2","Btg1","Btg2","Ccnl1","Ccrn4l","Cebpb","Cebpd","Cebpg","Csrnp1","Cxcl1",
+                          "Cyr61","Dcn","Ddx3x","Ddx5","Des","Dnaja1","Dnajb1","Dnajb4","Dusp1","Dusp8","Egr1","Egr2","Eif1","Eif5","Erf","Errfi1","Fam132b",
+                          "Fos","Fosb","Fosl2","Gadd45a","Gadd45g","Gcc1","Gem","H3f3b","Hipk3","Hsp90aa1","Hsp90ab1","Hspa1a","Hspa1b","Hspa5","Hspa8",
+                          "Hspb1","Hspe1","Hsph1","Id3","Idi1","Ier2","Ier3","Ier5","Ifrd1","Il6","Irf1","Irf8","Itpkc","Jun","Junb","Jund","Kcne4","Klf2",
+                          "Klf4","Klf6","Klf9","Litaf","Lmna","Maff","Mafk","Mcl1","Midn","Mir22hg","Mt1","Mt2","Myadm","Myc","Myd88","Nckap5l","Ncoa7",
+                          "Nfkbia","Nfkbiz","Nop58","Nppc","Nr4a1","Odc1","Osgin1","Oxnad1","Pcf11","Pde4b","Per1","Phlda1","Pnp","Pnrc1","Ppp1cc","Ppp1r15a",
+                          "Pxdc1","Rap1b","Rassf1","Rhob","Rhoh","Ripk1","Sat1","Sbno2","Sdc4","Serpine1","Skil","Slc10a6","Slc38a2","Slc41a1","Socs3","Sqstm1",
+                          "Srf","Srsf5","Srsf7","Stat3","Tagln2","Tiparp","Tnfaip3","Tnfaip6","Tpm3","Tppp3","Tra2a","Tra2b","Trib1","Tubb4b","Tubb6","Ubc",
+                          "Usp2","Wac","Zc3h12a","Zfand5","Zfp36","Zfp36l1","Zfp36l2","Zyx")
+  C<-GetAssayData(object = data, slot = "counts"); dissa=unique(dissociation_genes); dissa=rownames(C[rownames(C) %in% dissa,]);
+  disso <- colSums(C[dissa,])/Matrix::colSums(C)*100
+  # data <- AddModuleScore(object = data,features = list(RN_link_genes),name = 'percent.Link')#
+  data <- AddMetaData(data, disso, col.name = "percent_disso") #Mes=c('Mpz') #
+  # name='data_tikka25822_pref_all_v2.rds'
+  # saveRDS(data, file=name) # data2 <- readRDS(file = "data_tikka25822_pref_all_v1.rds")
+  #Unrepresentative genes away:
+  data$log10GenesPerUMI <- log10(data$nFeature_RNA) / log10(data$nCount_RNA); VlnPlot(data,features="log10GenesPerUMI")+  ggtitle("")
+  #Limits for molecule and gene detection, mitos, ribos, blood and HSPs:
+  nmin=round_any(quantile(data$nCount_RNA, p=0.05),100,f = ceiling)# nmax=round_any(quantile(data$nCount_RNA, p=0.95),100,f = ceiling)
+  a=quantile(data$nFeature_RNA[ data$nFeature_RNA<quantile(data$nFeature_RNA,0.25) ], p=0.5); b=sd((data$nFeature_RNA[ data$nFeature_RNA<quantile(data$nFeature_RNA,0.25) & !data$nFeature_RNA==0 ])) #179.3488
+  min=round(a+b,0) #499->500
+  a=quantile(data$nFeature_RNA[ data$nFeature_RNA>quantile(data$nFeature_RNA,0.95) ], p=0.5); b=sd((data$nFeature_RNA[ data$nFeature_RNA>quantile(data$nFeature_RNA,0.95) ])) #179.3488
+  max=round(a+b,0) #4552 ->4600,
+  pm=round(quantile(data$percent.mt, p=0.75)+2^sd(log2(data$percent.mt[!data$percent.mt==0]))) #VlnPlot(data, features="percent.mt",  group.by='orig.ident')+  ggtitle("")
+  lg=round(quantile(data$Percent.Largest.Gene, p=0.98)+2^sd(log2(data$Percent.Largest.Gene))) #8%
+  # rpl=round(quantile(data$percent_ribo, p=0.02)); #rps=round(quantile(data$percent.Rps, p=0.05))
+  rply=round(quantile(data$percent_ribo, p=0.98)); #rpsy=round(quantile(data$percent.Rps, p=0.99))
+  B=round(quantile(data[[]][,'percent.blood'],0.92),3); #VlnPlot(data, features="percent.blood",  group.by='orig.ident')+  ggtitle("")+ylim(2,20)  #split.by = "orig.ident",
+  # hsp1=round(quantile(data$percent.hsp, p=0.01),1);
+  hsp2=round(quantile(data$percent.hsp, p=0.99),1) #VlnPlot(data, features="HSP.score1",  group.by='orig.ident')+  ggtitle("")+ylim(-2,10)  #split.by = "orig.ident",
+  huussi=round(quantile(data$percent.house, p=0.99),1) #VlnPlot(data, features="House1",  group.by='orig.ident')+  ggtitle("")+ylim(0,100)  #split.by = "orig.ident",
+  linkki=round(quantile(data$percent.link, p=0.98),1)
+  dissen=round(quantile(data$nFeature_RNA, p=0.98),1) #Here was a mistake..
+  VlnPlot(data , features = c("Percent.Largest.Gene"), ncol = 1) #+ scale_y_continuous(limits = c(0,20))
+  # https://www.nature.com/articles/s41467-021-27035-8#code-availability
+  # https://github.com/egarren/scTfh
+  # https://constantamateur.github.io/2020-10-24-scBatch2/
+  # https://hbctraining.github.io/scRNA-seq/lessons/04_SC_quality_control.html
+  # Newest article 2022 about Ye et al....# > data #An object of class Seurat  #18881    features across 32700    samples within 1 assay #Active assay: RNA (18881 features, 0 variable features)
+  data= subset(data, nFeature_RNA>min & nFeature_RNA < max & #nCount_RNA>nmin &# nCount_RNA<nmax & #check this..
+                 log10GenesPerUMI > 0.8 & percent.mt < pm  & Percent.Largest.Gene < lg & percent_disso < dissen & #& percent.mt >  -Inf
+                 percent.link < linkki & percent_ribo < rply & #percent_ribo > rpl & # percent.Rps < rpsy & & percent.Rps > rps & #percent.hb <hb & S.Score < S & G2M.Score< G & #hb is fused to 'percent.blood', which has other gens also
+                 percent.blood < B & percent.hsp < hsp2 & percent.house<huussi) #& percent.hsp > hsp1)# percent.hsp > hsp1  & b=5.97%) # check the scores...  perhaps excessive
+  #data: 18881   features across 32700->e.g. 19777 or 21208      ok     samples within 1 assay
+  # name='data_e16_filtercut1_tikka281122.rds'
+  # saveRDS(data, file = name)
+  # data <- readRDS(file = "data_e16_filtercut1_tikka281122.rds") 
+  
+  # Filter MALAT1, #tää voi lähteä sellasenaan.. ja
+  data <- data[!grepl("Malat1", rownames(data)), ]; data <- data[!grepl("Gm42418", rownames(data)), ];  data <- data[!grepl("AY036118", rownames(data)), ]
+  # Filter Gm42418 and AY036118, https://github.com/egarren/scTfh/blob/main/code/01_gex.R
+  # #TCR and Ig identification and filtering
+  ig_list <- c("IG_C_gene", "IG_C_pseudogene", "IG_D_gene", "IG_D_pseudogene", "IG_J_gene", "IG_LV_gene","IG_pseudogene", "IG_V_gene", "IG_V_pseudogene")
+  tr_list <-c("TR_V_gene", "TR_V_pseudogene", "TR_D_gene", "TR_J_gene", "TR_J_pseudogene", "TR_C_gene")
+  data <- subset(data, features=rownames(data[!(data@assays[["RNA"]]@meta.features$gene_biotype %in% ig_list),])) #2 genes
+  data <- subset(data, features=rownames(data[!(data@assays[["RNA"]]@meta.features$gene_biotype %in% tr_list),])) #1 genes
+  sum(krts2 %in% rownames(data[is.na(data@assays[["RNA"]]@meta.features$mgi_symbol),])) #ok, i.e. 0, delete below:
+  data <- subset(data, features=rownames(data[!(is.na(data@assays[["RNA"]]@meta.features$mgi_symbol)),])) # 293 genes, but do these matter?
+  #%%Hemoglobins, and 'blood genes' away:
+  data <- subset(data, features=rownames(data[!(rownames(data) %in% hello),])) #https://adv-r.hadley.nz/subsetting.html
+  #Mitot away:
+  data <- data[!grepl("^mt-", rownames(data)), ]
+  #HSP genes away:
+  data <- subset(data, features=rownames(data[!(rownames(data) %in% HSP_genes),])) #also zero to epit #75 genes
+  # #%%Ribot away
+  # data <- subset(data, features=rownames(data[!(data@assays[["RNA"]]@meta.features$gene_biotype %in% rb.genes), ])) #93 genes
+  data <- data[!grepl("^Rp[sl]", rownames(data)), ]; data <- data[!grepl("Mrp[sl]", rownames(data)), ] #pattern ='^Rpl|^Rps|^Mrpl|^Mrps')
+  #%%House away!
+  data <- subset(data, features=rownames(data[!(rownames(data) %in% house),])) #also zero to epit, sum(house %in% krts2n)#  #Cell cycle.. now looks better... # S=round(quantile(data[[]][,'S.Score'],0.999),3); G=round(quantile(data[[]][,'S.Score'],0.999),3)
+  data = CellCycleScoring(data, s.features = str_to_title(cc.genes.updated.2019$s.genes), g2m.features = str_to_title(cc.genes.updated.2019$g2m.genes), set.ident = TRUE) #n = 21
+
+  #Calculating droplets requires a function:
+  ax=function(data,urgency) {
+
+  #https://www.geeksforgeeks.org/convert-first-letter-of-every-word-to-uppercase-in-r-programming-str_to_title-function/
+  # as_tibble(data[[]]) %>% ggplot(aes(Phase)) + geom_bar()
+  # https://stackoverflow.com/questions/1169388/finding-all-positions-for-multiple-elements-in-a-vector
+  # https://academic.oup.com/biomedgerontology/article/69/12/1437/592768
+  #If in hurry, here is how to remove the doublets;
+  # e.g. urgency='Zap speed!'
+  if (urgency=='hurry') {
+    
+    lista2<- SplitObject(data, split.by = "orig.ident"); pituus2=c() #DataList #auxiliary for the doublets
+    for (i in 1:length(lista2)) {pituus2=append(pituus2,length(lista2[[i]]$nCount_RNA)>100)}; samplesa2=which(pituus2)
+    list_pa1=lista1[-samplesa2]
+    list_pa2=lista2[samplesa2] #...if needed: 
+    # lista2=c(); list_pa1=c(); list_pa2=c(); # list_pa1=lista2
+  
+  if (length(list_pa1)>0) {
+    
+  c= c();nw6=c();namees=c()
+  for(i in 1:length(list_pa1)) {
+    list_pa1[[i]][["percent.mt"]] <- PercentageFeatureSet(list_pa1[[i]], pattern = "^mt-")
+    data.filt = FindVariableFeatures(list_pa1[[i]], verbose = F);
+    data.filt = ScaleData(data.filt, vars.to.regress = c("nFeature_RNA", "percent.mt"),verbose = F); #"G2M.Score","S.Score",'percent.link','percent.hsp','percent.blood', 'percent.house' ; "nFeature_RNA", "percent.mt"
+    data.filt = RunPCA(data.filt, verbose = F, npcs = 22);
+    data.filt = RunUMAP(data.filt, dims = 1:15, verbose = F); # define the expected number of doublet cells:
+    nExp <- round(ncol(data.filt) * 0.05);  # expect doublets less than in bigger samples, e.g. 2%, https://raw.githubusercontent.com/NBISweden/workshop-scRNAseq/master/labs/compiled/seurat/seurat_01_qc.Rmd
+    data.filt <- NormalizeData(data.filt);
+    data.filt <- doubletFinder_v3(data.filt, pN = 0.25, pK = 0.09, nExp = nExp, PCs = 1:15); # name of the DF prediction can change, so extract the correct column name.
+    DF.name = colnames(data.filt@meta.data)[grepl("DF.classification", colnames(data.filt@meta.data))];
+    c=colnames(data.filt[, data.filt@meta.data[, DF.name] == "Singlet"]); nw6<-append(nw6,list(c))}
+  aux=lista2[-samplesa2]; nimet=c(); for (i in 1:length(aux)) {nimet <- append(nimet,colnames(aux[[i]]))};
+  namees2=c(); for (i in 1:length(aux)) {namees2 <- append(namees2,colnames(aux[[i]][,nw6[[i]]]))}; #if the cell numbers are already low then it does not make sense to delete much here..
+  if (abs(length(nimet)-length(namees2)) <= round(length(nimet)*0.05)) {namees2=namees2} else {namees2=nimet} 
+  namees=unlist(nw6);james=unique(namees);
+  c= c();nw7=c();nameesa=c()
+  for(i in 1:length(lista2)) { #you need to have list_pa2 here (not lista2)
+    data.filt = FindVariableFeatures(lista2[[i]], verbose = F);
+    data.filt = ScaleData(data.filt, vars.to.regress = c("G2M.Score","S.Score",'percent.link','percent.hsp','percent.blood', 'percent.house'),verbose = F);
+    data.filt = RunPCA(data.filt, verbose = F, npcs = 22);
+    data.filt = RunUMAP(data.filt, dims = 1:15, verbose = F); # define the expected number of doublet cells:
+    nExp <- round(ncol(data.filt) * 0.05);  # expect 5/4% doublets, or more than smaller samples, https://raw.githubusercontent.com/NBISweden/workshop-scRNAseq/master/labs/compiled/seurat/seurat_01_qc.Rmd
+    data.filt <- NormalizeData(data.filt);
+    data.filt <- doubletFinder_v3(data.filt, pN = 0.25, pK = 0.09, nExp = nExp, PCs = 1:15); # name of the DF prediction can change, so extract the correct column name.
+    DF.name = colnames(data.filt@meta.data)[grepl("DF.classification", colnames(data.filt@meta.data))];
+    c=colnames(data.filt[, data.filt@meta.data[, DF.name] == "Singlet"]); nw7<-append(nw7,list(c))}
+  nameesa=unlist(nw7);james=c()
+  james=c(namees2,nameesa); james=unique(james); #
+  data=data[,james] 
+
+  } else if (length(list_pa1)==0) {
+    
+    c= c();nw7=c();nameesa=c()
+    for(i in 1:length(lista2)) { #you need to have list_pa2 here (not lista2)
+      data.filt = FindVariableFeatures(lista2[[i]], verbose = F);
+      data.filt = ScaleData(data.filt, vars.to.regress = c("G2M.Score","S.Score",'percent.link','percent.hsp','percent.blood', 'percent.house'),verbose = F);
+      data.filt = RunPCA(data.filt, verbose = F, npcs = 22);
+      data.filt = RunUMAP(data.filt, dims = 1:15, verbose = F); # define the expected number of doublet cells:
+      nExp <- round(ncol(data.filt) * 0.05);  # expect 5/4% doublets, or more than smaller samples, https://raw.githubusercontent.com/NBISweden/workshop-scRNAseq/master/labs/compiled/seurat/seurat_01_qc.Rmd
+      data.filt <- NormalizeData(data.filt);
+      data.filt <- doubletFinder_v3(data.filt, pN = 0.25, pK = 0.09, nExp = nExp, PCs = 1:15); # name of the DF prediction can change, so extract the correct column name.
+      DF.name = colnames(data.filt@meta.data)[grepl("DF.classification", colnames(data.filt@meta.data))];
+      c=colnames(data.filt[, data.filt@meta.data[, DF.name] == "Singlet"]); nw7<-append(nw7,list(c))}
+    nameesa=unlist(nw7);james=c()
+    james=c(nameesa); james=unique(james); #
+    data=data[,james] }
+
+  #If no hurry, there is an alternative way, not sure if better:
+  } else if (urgency=='leisure') { #you need to have the '}' bracket of 'if' in this line...  #This is slow for the first time:
+    
+  data <- CalculateDoublets(UMI = data, method = "scrublet", dbs_thr ='none', dbs_remove = FALSE, out_folder = folder) #Way too slow this way!! Takes about 1h. Especially the preprocessing... :)
+  #not needed, but possibly good:..capture.output(CalculateDoublets(UMI...)) from https://rpubs.com/Mentors_Ubiqum/capture_output
+  th=quantile(data@meta.data[,'scrublet_score'],0.96) #The threshold (th), 98%, Based on observed cells more than simulated doublets
+  # Doublet removal, check your threshold from the 'main output folder':
+  data <- CalculateDoublets(UMI = data, method = "scrublet", dbs_thr = th, dbs_remove = TRUE, out_folder = folder)} else {print('How fast do you want your doublets calculated?')};
+  
+  return(data)}
+
+  data=ax(data,urgency)
+
+  return(data)}
+
+folder='D:/Data for Seurat Analysis/filtered_gene_bc_matrices/Data Filtered and Processed in Seurat/lapimeno'
+urgency='hurry' #or leisure
+data=Pre_anal_process(data,folder,urgency)
+name='data_e16_filter_ok_tikka281122.rds'
+saveRDS(data, file = name)
+
+#With Integration:
+# data = readRDS(file = "data_e16_filter_ok_tikka281122.rds")
+# DefaultAssay(data) <- "RNA";
+#General before scaling
+#One needs to merge the datasets with less than 50 cells to each other or otherwise: https://github.com/satijalab/seurat/issues/4803, https://github.com/satijalab/seurat/issues/5563
+#https://satijalab.org/seurat/reference/integratedata, https://satijalab.org/seurat/reference/findintegrationanchors
+
+#For this you need to have Datalist, data, the name for saving, and mc for number of cell in minimum sample (if less than 100, and if above then 100)
+DataList <- SplitObject(data, split.by = "orig.ident") #DataList is made from the filtered data, but check manually if any of the sets are less than 80 cells
+# DataList <- c(DataList[1],DataList[4],DataList[5],DataList[6],DataList[7],DataList[8]) #DataList[8]
+#But it could be else:
+# ta = merge(DataList[[1]], y=c(DataList[[2]])); ta=list(ta); names(ta) = c("E11.5_6"); #DataList[[3]],DataList[[8]]
+
+#Transform at least work with bigger gene amount;
+##Tested with small number of genes, since this method does not have PC amount, and it did go through.. (if oke is loke and)
+Transform2 <- function(DataList,data,mc) {
+  #Smaller:
+  oke=c()
+  for(i in 1:length(DataList)) {
+    pata=DataList[[i]]
+    pb1=NormalizeData(pata, normalization.method = "LogNormalize", scale.factor = 10000) #scale should be ok: https://github.com/satijalab/seurat/issues/1708
+    teg=c(5,20,50,100,500,1000,2000,3000,4000,5000,6000,8000,10000,13000); na<-c()
+    for(i in 1:12) {ob1=FindVariableFeatures(object = pb1, selection.method = "mvp",num.bin=teg[i]); var1=length(VariableFeatures(object = ob1)); var1; na<-append(na,var1)}
+    oke=append(oke,round_any(max(na)*1.1,10, f=ceiling))} #1.2 feels high upper part so 1.1 is better
+#Integrating:# https://github.com/satijalab/seurat/issues/3061
+#Just the transform (without integration): #oke#3000 8000 nor 9000 did not have Sox2 but 10000 had...
+#This should work as a function for integration:
+#https://satijalab.org/seurat/articles/integration_rpca.html
+#Bigger:   
+# tap1a=round_any(dim(data)[1]*0.33, 100,f = ceiling)
+# pb1=NormalizeData(data, normalization.method = "LogNormalize", scale.factor = 10000) #scale should be ok: https://github.com/satijalab/seurat/issues/1708
+# ob1=FindVariableFeatures(object = pb1, selection.method = "mvp",num.bin=20); var1=length(VariableFeatures(object = ob1)); #var1 times 1.2 or 1.1 etc., num.bin=20 on std 3000 max
+# tap1=round_any(var1*1.1, 10,f = ceiling); tp1=round_any((tap1*2+tap1a*3)/5, 100,f = ceiling)
+# oke=tp1 #For the bigger(!) #sum(features=='Shh')
+DataList <- lapply(X = DataList, FUN = SCTransform,vst.flavor="v2",vars.to.regress = c("G2M.Score","S.Score",
+                  'percent.blood','percent.link','percent.hsp', 'percent.house'), variable.features.n = oke,method = "glmGamPoi");  #this is about 5-10min (second slowests)
+#check this with smaller regress/none if below not ok (1922).. was ok" :) bigge
+#lapply is ok, 'percent.link','percent.hsp', 'percent.house'
+loke=round(median(oke)) #For the smaller(!), with bigger, take away...
+features <- SelectIntegrationFeatures(object.list = DataList, nfeatures = loke); #  bigger amount of variables ok here; check if loke or oke!! 8small/big)
+#alphap=c(sum(features=='Shh'),sum(features=='Sox2'),length(features)): print(alphap)
+#oli 0 myls 9000 varfeat, täytynee tarkistaa... Shh (tai Sox2 ei näy neljälle tai viidellä näytteellä)
+DataList <- PrepSCTIntegration(object.list = DataList, anchor.features = features);gc();#mc=100
+# DataList <- lapply(X = DataList, FUN = RunPCA, features = features, npcs=mc) #You should not have less than around 60 cells here
+anchors <- FindIntegrationAnchors(object.list = DataList,normalization.method = "SCT",anchor.features = features);gc(); #This is the slowest, 10-30min depending on samples and method (or longer!)
+#k.anchor = 20, 12/13/22 ok, k.anchor = 20,dims = 1:30,reduction = "rpca"
+combined <- IntegrateData(anchorset = anchors, normalization.method = "SCT",k.weight = mc) #this lasts around 3-5min (thirds slowest); even though it is fast it could crash if mc is high
+#dims = 1:30, dims = 1:19,k.weight = 60, or dims = 1:17,k.weight = 53 (the number of cells) , dims = 1:30,k.weight = mc
+datajei=combined;
+return(datajei)}
+
+mc=100#min cell number
+data=Transform2(DataList,data,mc)
+
+# If it does not work (e.g. for combining stages), use this, (but not for combining samples(!) in one stage):
+# oke=c()
+# for(i in 1:length(DataList)) {
+#   pata=DataList[[i]]
+#   pb1=NormalizeData(pata, normalization.method = "LogNormalize", scale.factor = 10000) #scale should be ok: https://github.com/satijalab/seurat/issues/1708
+#   teg=c(5,20,50,100,500,1000,2000,3000,4000,5000,6000,8000,10000,13000); na<-c()
+#   for(i in 1:12) {ob1=FindVariableFeatures(object = pb1, selection.method = "mvp",num.bin=teg[i]); var1=length(VariableFeatures(object = ob1)); var1; na<-append(na,var1)}
+#   oke=append(oke,round_any(max(na)*1.1,10, f=ceiling))}
+# data <- SCTransform(data,vars.to.regress = c("G2M.Score","S.Score",'percent.blood','percent.link','percent.hsp', 'percent.house'),variable.features.n = oke,method = "glmGamPoi",vst.flavor="v2");
+
+name="E16.5_intg_ptt281122.rds"
+saveRDS(data, name)
+# data <- readRDS(file = "E16.5_inter_ptt281122.rds")
+
+#If you know that you have e.g. one epithelial cluster and one mesehchymal cluster, you could aim to see those by changing the below variables...
+Cluster_iteration = function (data,plot_name,PC,rs,cond) {
+  data <- RunPCA(data, npcs=50,verbose = FALSE); #I have not used more than 50 pcs
+  ElbowPlot(object = data, ndims = 50)
+  pct <- data[["pca"]]@stdev / sum(data[["pca"]]@stdev) * 100
+  cumu <- cumsum(pct); co1 <- which(cumu > 90 & pct < 5)[1]
+  co2 <- sort(which((pct[1:length(pct) - 1] - pct[2:length(pct)]) > 0.1), decreasing = T)[1] + 1
+  pcs <- min(co1, co2);co1;co2;pcs
+  plot_df <- data.frame(pct = pct,cumu = cumu,rank = 1:length(pct))
+  ggplot(plot_df, aes(cumu, pct, label = rank, color = rank > pcs)) + geom_text() + geom_vline(xintercept = 99, color = "grey") + geom_hline(yintercept = min(pct[pct > 1]), color = "grey") +theme_bw()
+  #14 was perhaps too low I think, and from 19... starts clearly uniform
+  if (PC=='Default') {z=pcs} else if (cond=='big') {if (pcs<27) {z=pcs+round(pcs*0.5)+5} else {z=pcs+3}} else {z=PC}
+  #this defines much of the shape.. if you are expecting low numbers of clusters, this should be low, or in the beginning
+  data <- RunUMAP(data, dims = 1:z) #seed.use = saved.seed, huom. without seed.use estimate, basically no matter,
+  data <- FindNeighbors(data, dims = 1:z) #  data@meta.data= data@meta.data[, c(1:15)]
+  if (rs=='Default') {res=0.5} else if (rs=='big') {if (z<90) {res=0.4+round(z/80,2)} else if (z >= 90 ) {res=1.5}} else {res=rs}
+  #divides the shape to smaller or bigger pieces
+  data <- FindClusters(data, resolution = res) #0.7/0.8/1 is good for pseudo check the final resolution for clustera and also from above 'hei',
+  cal=0:(dim(table ( Idents( data) ))-1); cyl=1:dim(table ( Idents( data) ));current.cluster.ids <- cal; new.cluster.ids <- cyl; #or e.g.:
+  data@active.ident <- plyr::mapvalues(x =  data@active.ident , from = current.cluster.ids, to = new.cluster.ids);
+  data$seurat_clusters <- plyr::mapvalues(x =  data$seurat_clusters , from = current.cluster.ids, to = new.cluster.ids);
+  name_pdf=paste(plot_name,'.pdf',sep=""); pdf(name_pdf) #This is ok resolution; print was missing from previous, like in 'https://github.com/bicciatolab/popsicleR/blob/main/R/popsicleR.R'
+  DimPlot( data, reduction = "umap",pt.size = 1, label = TRUE, label.size = 7,group.by = 'seurat_clusters');dev.off() #group.by = 'seurat_clusters', SCT_snn_res.0.3
+  return(c(data,z))}
+
+plot_name='E16.5_epit_281122'
+PC='Default' #Default/'number'/'nothing'
+cond='no' #if big then
+rs=0.7 #Default, or 0.7 or 1.07 produces the smaller nub '18', but 1.05/6.. not
+latex=c(); latex=Cluster_iteration(data,plot_name,PC,rs,cond) #Check if it is data or data1 or data2 etc.
+data=latex[[1]]; latex[[2]]
+name="E16.5_final_ptt281122.rds"
+saveRDS(data, name)
+
+#Remember to put the last folder where the files could be found:
+setwd(dir='D:/Data for Seurat Analysis/filtered_gene_bc_matrices/Data Filtered and Processed in Seurat/lapimeno')
+data1 <- data #readRDS(file = "E11.5_final_ptt281122.rds")
+# data2 <- readRDS(file = "E16.5_final clustered_ptt281122.rds") # data3 <- readRDS(file = "E16.5_final clustered_ptt281122.rds")
+aux=length(table(Idents(data))); table(Idents(data))
+DefaultAssay( data1) <- "RNA" # DefaultAssay( data2) <- "RNA" # DefaultAssay( data3) <- "RNA"
+DimPlot( data1, reduction = "umap",pt.size = 1, label = TRUE, label.size = 7,group.by = 'seurat_clusters')
+vars=c('Pitx2','Sox2','Shh','Cdh5','Wnt10a','Fgf4','Bmi1','Lgr5','Lef1','p63', 'Eda', 'Vim','Krt5','Mpz', 'Foxi3'); v=length(vars) 
+vars=c('Pitx2','Sox2','Shh','Vim')
+FeaturePlot(data1, features = vars,cols = c("#F8F8F8",'red'))
+
+#I want to cut the cluster 9 from its 'head' and the exclude Cdh5 cells and some of the Vim cells:
+#instead of e11t, let's put ed_1 for the names
+DefaultAssay( data1) <- "RNA"
+pb33 <- subset(x = data1, idents = c(3,5,6,8,11)) #you need later.. Or is it cluster 8 instead of 7.. 4,7,10
+DefaultAssay( pb33) <- "RNA"
+DimPlot(pb33,reduction="umap",pt.size = 1, label = TRUE, label.size = 7,group.by = 'ident') + ggtitle("") #+ xlim(-12,4) #Check that the clusters look the same as previously
+e1=subset(x = pb33, subset = UMAP_1 > 1.5); #e1=subset(x = e1, subset = UMAP_1 < 8);e1=subset(x = e1, subset = UMAP_2 >-8);e1=subset(x = e1, subset = UMAP_2 < 2.85)
+c0=names(pb33@active.ident) %in% colnames(e1);
+pb33r=pb33[,c0]
+DimPlot(pb33r,reduction="umap",pt.size = 1, label = TRUE, label.size = 7,group.by = 'seurat_clusters')#+ xlim(-11,-2)#+ xlim(-4,4)+ylim(7,9)+ ggtitle("")
+# DefaultAssay( pb33) <- "integrated"
+FeaturePlot(pb33r, features = vars,cols = c("#F8F8F8",'red'))
+e1=subset(x = pb33r, subset = UMAP_2 < 2.6); #this required iteration; 3+1*UMAP_1; -2.3
+c0=names(pb33r@active.ident) %in% colnames(e1);
+pb33r=pb33r[,c0]
+DimPlot(pb33r,reduction="umap",pt.size = 1, label = TRUE, label.size = 7,group.by = 'seurat_clusters')#+ xlim(-11,-2)#+ xlim(-4,4)+ylim(7,9)+ ggtitle("")
+pb33=pb33r
+FeaturePlot(pb33, features = 'Vim',cols = c("#F8F8F8",'red'))
+FeaturePlot(pb33, features = vars,cols = c("#F8F8F8",'red'))
+DefaultAssay( pb33) <- "RNA" #epim<- merge(pb11, y = c(pb33,pb33),  project = "tot")
+name="E16.5_epithelia_ptt281122.rds"; saveRDS(pb33, name)
+# pb11=readRDS(file = "D:/Data for Seurat Analysis/filtered_gene_bc_matrices/Data Filtered and Processed in Seurat/e16_amap/E11.5_epithelia10_ptt1281122.rds")
+# DefaultAssay(pb11) <- "RNA"
+
+# This excludes cells expressing an unwanted gene with a wanted percentile
+# Ths smaller the percentile, the more the unwanted gene you have excluded and more included the wanted ones
+Ex_nam=function(pb22,gene,percentile,assay) {
+  DefaultAssay(pb22) <- assay
+  x=GetAssayData(subset(x = pb22, features = c(gene)));håj=colnames(x)
+  # x=x[, colSums(x !=  min(x) ) >  min(x) ];
+  x=as.double(x);names(x)=håj
+  x2 <- as.numeric(x); if (assay=='RNA') {print(table(x2))}
+  print(c(min(x2), max(x2), median(x2), mean(x2),quantile(x2,percentile)))
+  hist(x2, xlim=c(min(x2),quantile(x2,0.99)),breaks=200);
+  lep=quantile(x2,percentile); lep
+  x2=x[x <= lep]; houm=names(x2);toInclude <- houm;
+  print(c(sum(colnames(pb22) %in% toInclude)))
+  pb22a <- pb22[,colnames(pb22) %in% toInclude]
+  houm2=colnames(pb22a)
+  DefaultAssay(pb22) <- "RNA"
+  return(houm2)}
+In_nam=function(pb22,gene,percentile,assay) {
+  DefaultAssay(pb22) <- assay
+  x=GetAssayData(subset(x = pb22, features = c(gene)));håj=colnames(x)
+  # x=x[, colSums(x !=  min(x) ) >  min(x) ];
+  x=as.double(x);names(x)=håj
+  x2 <- as.numeric(x); if (assay=='RNA') {print(table(x2))} else if (assay=='SCT') {print(table(x2))}
+  print(c(min(x2), max(x2), median(x2), mean(x2),quantile(x2,percentile)))
+  hist(x2, xlim=c(min(x2),quantile(x2,0.9)),breaks=200);
+  lep=quantile(x2,percentile); lep
+  x2=x[x > lep]; houm=names(x2);toInclude <- houm;
+  print(c(sum(colnames(pb22) %in% toInclude)))
+  pb22a <- pb22[,colnames(pb22) %in% toInclude]
+  houm2=colnames(pb22a)
+  DefaultAssay(pb22) <- "RNA"
+  return(houm2)}
+#Why to include some vimetins:
+# https://journals.biologists.com/dev/article/144/22/4103/48235/Epithelial-vimentin-plays-a-functional-role-in
+# https://www.scielo.br/j/bor/a/TQxS7DgvJdSTHs95mP4mnFx/?lang=en https://www.nature.com/articles/srep24389
+# https://www.frontiersin.org/articles/10.3389/fcell.2019.00389/full https://link.springer.com/article/10.1007/s10735-014-9592-1
+
+# pb11 <- readRDS(file = "E11.5_epit_ptt281122.rds")
+# pb22 <- readRDS(file = "E14.25_epit_ptt281122.rds")
+# pb33 <- readRDS(file = "E16.5_epit_ptt281122.rds")
+pb11
+vv=Ex_nam(pb11,'Vim',0.75,'integrated') #vv=Ex_nam(pb11,'Vim',0,'RNA'), You need to have assumption what are kept. Assuming that there are no Vim cells and excluding just the top tail expression
+pi=In_nam(pb11,'Pitx2',0.15,'integrated'); #Removing the spike in the beginning, the values should be above 0
+ji=In_nam(pb11,'Shh',0.0,'RNA') #Rna gives me 19, sct 9 and integrated 0 cells expressing shh.. not much
+ki=In_nam(pb11,'Sox2',0.25,'integrated'); 
+#the absolute was 22 with rna... so that does not work since it produces around 7 cells when cut through
+tna1=intersect(vv,pi);length(tna1) #https://www.rdocumentation.org/packages/prob/versions/1.0-1/topics/intersect 
+#with unique you need combined vector
+# comb=c(ki) #,ji # tna11=unique(comb);length(tna11) #https://www.digitalocean.com/community/tutorials/unique-function-r-programming
+# ei=In_nam(pb11,'Shh',0.75,'RNA'); #should be more than around 0
+# tna11=ki[!ki %in% ji]; length(tna11) #unique(c(ki,ei)); tot_nam=Reduce(intersect, list(tna1, tna11));length(tot_nam) #This is just 7 cells...
+# tot_nam=Reduce(intersect, list(vv,pi,ji,ki));length(tot_nam) #https://statisticsglobe.com/find-common-elements-from-multiple-vectors-in-r
+DefaultAssay(pb11) <- "RNA"
+pb11 <- pb11[,tna1]
+
+# epi<- merge(pb11, y = c(pb11),  project = "tot") #if error from this line then:
+# ok=pb11@meta.data; uu=GetAssayData(pb11); uu=data.frame(uu); mat <- as(as.matrix(uu), "sparseMatrix"); pb11 <- CreateSeuratObject(counts=mat) #to get merge working... :)
+#https://www.biostars.org/p/9527335/#9527339
+#pb11@meta.data=ok #pb11@meta.data$orig.ident='E11.5'
+saveRDS(pb11, file = "E11.5_epit_ptt281122.rds") # pb11 <- readRDS(file = "E11.5_epit_ptt281122.rds")
+
+#5051
+pb22
+vv=Ex_nam(pb22,'Vim',0.75,'integrated') #You need to have assumption what are kept. Assuming that there are no Vim cells and excluding just the top tail expression
+pi=In_nam(pb22,'Pitx2',0.25,'integrated'); #Removing the spike in the beginning, the values should be above 0
+ji=In_nam(pb22,'Shh',0.75,'RNA');
+ki=In_nam(pb22,'Sox2',0.75,'RNA');
+tna2=intersect(vv,pi);length(tna2)# comb=c(ki); tna22=unique(comb);length(tna22)
+DefaultAssay(pb22) <- "RNA"
+pb22 <- pb22[,tna2]
+saveRDS(pb22, file = "E16.5_epit_ptt281122.rds");  # pb22 <- readRDS(file = "E14.25_epit_ptt281122.rds")
+
+#2524
+pb33
+vv=Ex_nam(pb33,'Vim',0.75,'integrated') #You need to have assumption what are kept. Assuming that there are no Vim cells and excluding just the top tail expression
+pi=In_nam(pb33,'Pitx2',0.25,'integrated'); #Removing the spike in the beginning, the values should be above 0
+ji=In_nam(pb33,'Shh',0.5,'RNA')
+ki=In_nam(pb33,'Sox2',0.5,'RNA');
+tna3=intersect(vv,pi);length(tna3)
+# comb=c(ki); tna33=unique(comb);length(tna33)
+# tot_nam3=Reduce(intersect, list(tna3, tna33));length(tot_nam3) #226.. better than 7/184/48...
+# tn3=Reduce(intersect, list(vv,pi,ji,ki));length(tn3)
+DefaultAssay(pb33) <- "RNA"
+pb33 <- pb33[,tna3]; pb33; 
+saveRDS(pb33, file = "E16.5_epit_ptt281122.rds"); epimm<- merge(pb33, y = c(pb33),  project = "tot") #pb33 <- readRDS(file = "E16.5_epit_ptt281122.rds")
+
+ok='D:/Data for Seurat Analysis/filtered_gene_bc_matrices/Data Filtered and Processed in Seurat/lapimeno'; setwd(dir=ok)
+epim<- merge(pb11, y = c(pb22,pb33),  project = "tot");epim;pb11;pb22;pb33;
+saveRDS(epim, file = "epi_merge_281122.rds")
+epim <- readRDS(file = "epi_merge_281122.rds") # epim@meta.data[epim@meta.data$orig.ident=='SeuratProject',1]='E11.5' # rep('E11.5',74)
+
+#Hahaa! This trick I did not realise. Since I have already done the big integration, it does not need to be done here: 3.6.22
+e11=which(epim$orig.ident %in% c('E11.5_1','E11.5_2','E11.5_3','E11.5_4','E11.5_5','E11.5_6','E11.5_7','E11.5_8')) #unique(epim$orig.ident)
+e14=which(epim$orig.ident %in% c('E14.25_1','E14.25_2','E14.25_3','E14.25_4','E14.25_5','E14.25_6'))
+e16=which(epim$orig.ident %in% c('E16.5_1','E16.5_2'))
+epim$orig.ident[e11]='E11.5'
+epim$orig.ident[e14]='E14.25' #'Our'
+epim$orig.ident[e16]='E16.5'
+table(epim$orig.ident) #11.11.22
+# E11.5 E14.25  E16.5 # 347->393  2593   1200 /342 2827 1891 
+
+DefaultAssay(epim) <- "RNA" #https://github.com/satijalab/seurat/issues/1528
+tap1a=round_any(dim(epim)[1]*0.33, 100,f = ceiling)
+pb1=NormalizeData(epim, normalization.method = "LogNormalize", scale.factor = 10000) #scale should be ok: https://github.com/satijalab/seurat/issues/1708
+ob1=FindVariableFeatures(object = pb1, selection.method = "mvp",num.bin=20); var1=length(VariableFeatures(object = ob1)); #var1 times 1.2 or 1.1 etc., num.bin=20 on std 3000 max
+tap1=round_any(var1*1.1, 10,f = ceiling); tp1=round_any((tap1*3+tap1a*2)/5, 100,f = ceiling)
+teg=c(5,20,50,100,500,1000,2000,3000,4000,5000,6000,8000,10000,13000); na<-c()
+for(i in 1:12) {ob1=FindVariableFeatures(object = pb1, selection.method = "mvp",num.bin=teg[i]); var1=length(VariableFeatures(object = ob1)); var1; na<-append(na,var1)}
+oke=round_any(max(na)*1.1,10, f=ceiling); #1.2 feels high upper part so 1.1 is better
+# ifnb.list <- SplitObject(epim, split.by = "orig.ident") #ifnb.list 
+# ifnb.list <- lapply(X = ifnb.list, FUN = SCTransform,vst.flavor="v2",variable.features.n = tp1) #testing more variable features (better also for the smaller epim: 3400)
+# features <- SelectIntegrationFeatures(object.list = ifnb.list, nfeatures = oke)
+# ifnb.list <- PrepSCTIntegration(object.list = ifnb.list, anchor.features = features); gc(); memory.limit(9999999999999);
+# immune.anchors <- FindIntegrationAnchors(object.list = ifnb.list, normalization.method = "SCT",anchor.features = features); gc(); memory.limit(9999999999999);
+# immune.combined.sct <- IntegrateData(anchorset = immune.anchors, normalization.method = "SCT") # I reduced the k.weight = 100 to 85/70/65 from the default, depends on min cells..
+# epime=epim; rm(epim); epim=immune.combined.sct; epim 
+# # If it does not work, use this:
+# tap1a=round_any(dim(epim)[1]*0.33, 100,f = ceiling)
+# pb1=NormalizeData(epim, normalization.method = "LogNormalize", scale.factor = 10000) #scale should be ok: https://github.com/satijalab/seurat/issues/1708
+# ob1=FindVariableFeatures(object = pb1, selection.method = "mvp",num.bin=20); var1=length(VariableFeatures(object = ob1)); #var1 times 1.2 or 1.1 etc., num.bin=20 on std 3000 max
+# tap1=round_any(var1*1.1, 10,f = ceiling); tp1=round_any((tap1*3+tap1a*2)/5, 100,f = ceiling)
+# teg=c(5,20,50,100,500,1000,2000,3000,4000,5000,6000,8000,10000,13000); na<-c()
+# for(i in 1:12) {ob1=FindVariableFeatures(object = pb1, selection.method = "mvp",num.bin=teg[i]); var1=length(VariableFeatures(object = ob1)); var1; na<-append(na,var1)}
+# oke=round_any(max(na)*1.1,10, f=ceiling); 
+
+epim <- SCTransform(epim,vars.to.regress = c("G2M.Score","S.Score",'percent.blood','percent.link','percent.hsp', 'percent.house'), variable.features.n = tp1,method = "glmGamPoi",vst.flavor="v2"); #either oke or tp1 or else... or use this:
+# epim <- FindVariableFeatures(epim, selection.method = "vst", nfeatures = 2000); all.genes <- rownames(pbmc)
+# epim <- ScaleData(epim, vars.to.regress = c("G2M.Score","S.Score",'percent.blood','percent.link','percent.hsp', 'percent.house'))
+# epim <- SCTransform(epim,method = "glmGamPoi",vst.flavor="v2",variable.features.n = 4000);
+saveRDS(epim, file = "epi_sct_281122.rds")
+# saveRDS(epim, file = "D:/Data for Seurat Analysis/filtered_gene_bc_matrices/Data Filtered and Processed in Seurat/e16_amap/epi_iv1_v5_ok_131022.rds")
+# epim <- readRDS(file = "epi_sct_281122.rds")
+
+epim <- RunPCA(epim, npcs=50,verbose = FALSE);
+ElbowPlot(object = epim, ndims = 50)
+pct <- epim[["pca"]]@stdev / sum(epim[["pca"]]@stdev) * 100
+cumu <- cumsum(pct)
+co1 <- which(cumu > 90 & pct < 5)[1]
+co2 <- sort(which((pct[1:length(pct) - 1] - pct[2:length(pct)]) > 0.1), decreasing = T)[1] + 1
+pcs <- min(co1, co2);co1;co2;pcs
+plot_df <- data.frame(pct = pct,cumu = cumu,rank = 1:length(pct))
+ggplot(plot_df, aes(cumu, pct, label = rank, color = rank > pcs)) + geom_text() + geom_vline(xintercept = 99, color = "grey") + geom_hline(yintercept = min(pct[pct > 1]), color = "grey") + theme_bw()
+#If pcs is 5 or lower then, or #pcs #z=19 #6 was perhaps too low I think, and from 19... starts clearly uniform
+z=pcs+6 #z=8/30, you need to have disting clusters if the suggestion does not work increase (or decrease), 30 is ok 
+epim <- RunUMAP(epim, dims = 1:z) #seed.use = saved.seed, huom. without seed.use estimate, basically no matter, so pcs 18 and vg3200 ok for epit. (17.11) (or 30 and 4000)
+epim <- FindNeighbors(epim, dims = 1:z) #  epim@meta.data= epim@meta.data[, c(1:15)]
+epim <- FindClusters(epim, resolution = 0.7) #0.7/0.8/1 is good for pseudo check the final resolution for clustera and also from above 'hei',
+cal=0:(dim(table ( Idents( epim) ))-1); cyl=1:dim(table ( Idents( epim) ));current.cluster.ids <- cal; new.cluster.ids <- cyl; #or e.g.:
+epim@active.ident <- plyr::mapvalues(x =  epim@active.ident , from = current.cluster.ids, to = new.cluster.ids);
+epim$seurat_clusters <- plyr::mapvalues(x =  epim$seurat_clusters , from = current.cluster.ids, to = new.cluster.ids);
+DimPlot( epim, reduction = "umap",pt.size = 5.5, label = TRUE, label.size =14 ,group.by = 'seurat_clusters') + ggtitle('') + guides(colour = guide_legend(override.aes = list(size=8)))
+
+ok='D:/Data for Seurat Analysis/filtered_gene_bc_matrices/Data Filtered and Processed in Seurat/lapimeno'; setwd(dir=ok)
+saveRDS(epim, file = 'epim_f_pc21-r0.7_ok_281122.rds')
+# epim <- readRDS(file = "epim_f_ok_281122.rds") 
+
+# epim=readRDS(file = "epi_clusta_sox2_v11_141122.rds") #epi_totclusoksox2_31022 epi_clusta_shh_30922.rds
+jpeg("Umap_clusters.jpg", width = 12000, height = 9000, quality = 100,pointsize = 16, res=1200);
+DimPlot( epim, reduction = "umap",pt.size = 5.5, label = TRUE, label.size =14 ,group.by = 'seurat_clusters') + ggtitle('') + guides(colour = guide_legend(override.aes = list(size=8)));dev.off()
+DefaultAssay( epim) <- "integrated";#RNA SCT integrated  
+vars=c('Sox2','Shh','Fgf4','Wnt10a','Wnt10b','Lgr5','Lef1','Bmi1','Sostdc1','Foxi3','Spry2','Etv4','Axin2','Dkk3','Igfbp5', 'Nphs1') #'Vim', 
+jpeg("Genes in Umap_scaled.jpg", width = 12000, height = 9000, quality = 100,pointsize = 16, res=1200);
+FeaturePlot(epim, features = vars,cols = c("#F8F8F8",'red'),pt.size = 1.5, order=TRUE);dev.off()
+DefaultAssay( epim) <- "RNA";
+jpeg("Genes in Umap_noscaled.jpg", width = 12000, height = 9000, quality = 100,pointsize = 16, res=1200);
+FeaturePlot(epim, features = vars,cols = c("#F8F8F8",'red'),pt.size = 1,order=TRUE);dev.off()
+DefaultAssay( epim) <- "SCT";
+jpeg("Genes in Umap_scaled_sct.jpg", width = 12000, height = 9000, quality = 100,pointsize = 16, res=1200);
+FeaturePlot(epim, features = vars,cols = c("#F8F8F8",'red'),pt.size = 1,order=TRUE);dev.off()
+tplot=DimPlot(epim,reduction="umap",pt.size = 3, label = FALSE, label.size = 10,group.by = 'orig.ident',order=FALSE) + ggtitle("") #cols = c("#1fc600", "#b580a7", "#3366ff")
+jpeg("E11.jpg", width = 12000, height = 9000, quality = 100,pointsize = 16, res=1200);
+tplot[[1]]$layers[[1]]$aes_params$alpha = ifelse (epim@meta.data$orig.ident=='E11.5', 0.95, 0.05); tplot;dev.off()
+jpeg("E14.jpg", width = 12000, height = 9000, quality = 100,pointsize = 16, res=1200);
+tplot[[1]]$layers[[1]]$aes_params$alpha = ifelse (epim@meta.data$orig.ident=='E14.25', 0.95, 0.05 ); tplot;dev.off()
+jpeg("E16.jpg", width = 12000, height = 9000, quality = 100,pointsize = 16, res=1200);
+tplot[[1]]$layers[[1]]$aes_params$alpha = ifelse (epim@meta.data$orig.ident=='E16.5', 0.95, 0.05 ); tplot;dev.off()
+
+data=epim; DefaultAssay( data) <- "RNA";  x=c();ax1=c();testa=c(); rangi=max(as.numeric(data@meta.data[,'seurat_clusters'])) #The best;
+tasta=function(data,vars,rangi) { for(i in 1:rangi) {conda=data@meta.data[,'seurat_clusters']==strtoi(names(table(data@meta.data[,'seurat_clusters']))[i]) 
+testa=data.frame(GetAssayData(data[vars,conda])); x=sum(testa>0); ax1= append(ax1,x)}; return(ax1)} #If you run separately, check that you have the 'vars' driven
+aa=c();uu=c();bb=c();v=length(vars)
+for(i in 1:v) {uu=tryCatch( tasta(data,vars=vars[i],rangi),warning = function(w) {print(paste("No cells in cluster", i))}, error = function(e) {bb=c(bb,0*1:rangi)});aa=c(aa,uu)} #aa=c(aa,0*1:rangi) print('hello')
+hei=c();hei=data.frame(matrix(aa,nrow = rangi, ncol = v,byrow = FALSE)); 
+names(hei)=vars; hei$'Total Number of Cells'=table ( Idents( data) ); #check vars...
+for(i in 1:v) {hei[,v+1+i]=round(hei[,i]/hei[,v+1]*100,1)}; names(hei)[(v+2):(v+v+1)]=paste(vars,' Portion (%)')
+write.csv(hei, 'Cell numbers_RNA_tikka281122.csv',quote = F); #The more the cells ou have the more this takes:
+
+DefaultAssay( epim) <- "SCT"; 
+holp <- BuildClusterTree(epim); 
+jpeg("ClusterTreee.jpg", width = 12000, height = 9000, quality = 100,pointsize = 16, res=1200);
+PlotClusterTree(holp, direction = "upwards");dev.off();
+hou=Tool(object = holp, slot = 'BuildClusterTree')
+
+DefaultAssay(epim) <- "RNA"; 
+markers11 <- FindAllMarkers(epim, only.pos = FALSE, min.pct = 0.01, logfc.threshold = 0.01,test.use = "roc") #test.use = "roc"; default min.pct=0.1 and lfct=0.25
+#SCT does not work for FindMarkers, RNA was recomm, but integrated is better as per number of genes, but the overlap is not big so perhaps better to have RNA, also due: 
+#https://github.com/satijalab/seurat/issues/2272, https://github.com/satijalab/seurat/discussions/4000. https://github.com/satijalab/seurat/discussions/4032
+write.csv(markers11,file = "markers_epit_sct_tikka281122.csv",row.names = FALSE) # 
+# markers11=read.csv(file = 'markers_epit_rna_tikka281122.csv')
+#For wilcox:
+# aux=round_any(dim(markers11)[1]/10,20,f = ceiling) #5% of top, check that dim(markers11)[1] is at least 100 and in top 5 are no inf/-infs
+# infkp=round(quantile(markers11[with(markers11,order(-avg_log2FC)),][1:aux,'avg_log2FC'],0.33),0); #difp=round(quantile(markers11[with(markers11,order(-avg_diff)),][1:aux,'avg_log2FC'],0.33),0)
+# infkm=round(quantile(markers11[with(markers11,order(avg_log2FC)),][1:aux,'avg_log2FC'],0.33),0); #difm=round(quantile(markers11[with(markers11,order(avg_diff)),][1:aux,'avg_log2FC'],0.33),0)
+# markers11[which(markers11[,'avg_log2FC']=='Inf'),'avg_log2FC']=infkp
+# # markers11[which(markers11[,'avg_diff']=='Inf'),'avg_diff']=difp
+# markers11[which(markers11[,'avg_log2FC']=='-Inf'),'avg_log2FC']=infkm
+# # markers11[which(markers11[,'avg_diff']=='-Inf'),'avg_diff']=difm
+# markers11[,'Cluster Difference']=markers11[,'pct.1']-markers11[,'pct.2']
+# new_cols = c(7,5,8,1,2,3,4,6);
+# # new_cols = c(2,3,1,4,5,6,7,8);
+# markers11=markers11[new_cols]
+# myList<-list();m1=max(as.numeric(markers11[,'cluster'])); #https://dplyr.tidyverse.org/reference/filter.html
+# for(i in 1:m1) {myList<-list.append(myList,data.frame(filter(markers11, cluster == i)[rev(order(filter(markers11, cluster == i)[,2], decreasing=TRUE)),]))}
+# for(i in 1:m1) {write.xlsx(data.frame(myList[i]), paste(i,".xlsx"),row.names = FALSE)} #can be also with row names: row.names = TRUE
+#For auc:
+markers11 <- cbind(markers11, markers11$pct.1*2*(markers11$myAUC-0.5)+(1-markers11$pct.2)/3);colnames(markers11)[9] <- "Positive Markers"
+markers11 <- cbind(markers11, (1-markers11$pct.1)*2*(0.5-markers11$myAUC)+markers11$pct.2/4);colnames(markers11)[10] <- "Negative Markers"
+markers11 <- cbind(markers11, markers11$pct.1-markers11$pct.2);colnames(markers11)[11] <- "Cluster Difference"
+markers11 <- cbind(markers11, (markers11$pct.1-markers11$pct.2)*markers11$myAUC);colnames(markers11)[12] <- "Goodness of a Cluster Marker"
+aux=round_any(dim(markers11)[1]/10,20,f = ceiling) #5% of top, check that dim(markers11)[1] is at least 100 and in top 5 are no inf/-infs
+infkp=round(quantile(markers11[with(markers11,order(-avg_log2FC)),][1:aux,'avg_log2FC'],0.33),0); difp=round(quantile(markers11[with(markers11,order(-avg_diff)),][1:aux,'avg_log2FC'],0.33),0)
+infkm=round(quantile(markers11[with(markers11,order(avg_log2FC)),][1:aux,'avg_log2FC'],0.33),0); difm=round(quantile(markers11[with(markers11,order(avg_diff)),][1:aux,'avg_log2FC'],0.33),0)
+markers11[which(markers11[,'avg_log2FC']=='Inf'),'avg_log2FC']=infkp
+markers11[which(markers11[,'avg_diff']=='Inf'),'avg_diff']=difp
+markers11[which(markers11[,'avg_log2FC']=='-Inf'),'avg_log2FC']=infkm
+markers11[which(markers11[,'avg_diff']=='-Inf'),'avg_diff']=difm
+range01 <- function(x){(x-min(x))/(max(x)-min(x))} #https://stackoverflow.com/questions/5665599/range-standardization-0-to-1-in-r
+pat=range01(markers11[,'avg_log2FC']);pati=pat+0.001;
+mina=1-markers11[,'pct.2'];mina2=range01(mina);mana2=range01(markers11[,'pct.1'])+0.001
+cd=range01(markers11[,'Cluster Difference']);dif=quantile(markers11[,'Cluster Difference'],0.8)
+min1=quantile(markers11[,'pct.1'],0.8);min11=quantile(markers11[,'pct.1'],0.2)
+min2=quantile(markers11[,'pct.2'],0.8);min22a=quantile(markers11[,'pct.2'],0.2);min22=quantile(markers11[,'Cluster Difference'],0.6);medi=median(pati);vec=c()
+for(i in 1:length(markers11$myAUC)) {
+  if (markers11$myAUC[i] > 0.5) {
+    if (markers11[i, 'Cluster Difference'] >= dif & markers11$pct.1[i]>min1 & markers11$pct.2[i]<min2 & pati[i]>medi) {vec[i] <- mana2[i]+(markers11$myAUC[i]-0.5)+0.5+mina2[i]+pati[i]+cd[i]*0.3}
+    else if (markers11[i, 'Cluster Difference'] >= min22 & markers11$pct.1[i]>min11 & markers11$pct.2[i]<min2 & pati[i]>medi) {vec[i]  <- mana2[i]*0.95+(markers11$myAUC[i]-0.5)+0.5+mina2[i]+pati[i]+cd[i]*0.25}
+    else if (markers11[i, 'Cluster Difference'] < min22 | markers11$pct.1[i]>min11 | markers11$pct.2[i]<min2 | pati[i]>medi){vec[i]  <- mana2[i]*0.8+(markers11$myAUC[i]-0.5)+0.5+mina2[i]*0.9+pati[i]*0.9+cd[i]*0.1}
+    else {vec[i]  <- mana2[i]*0.6+(markers11$myAUC[i]-0.5)+0.5+mina2[i]*0.75+pati[i]*0.75+cd[i]*0.08}
+  } else {vec[i] <-  0}}
+markers11 <- cbind(markers11,vec);colnames(markers11)[13] <- "Ultimate Positive" #data.Normalization (x,type="n0",normalization="column")
+veca=list();n1=max(as.numeric(markers11[,7]));asdf=c();mat_nonzero=c()
+for(i in 1:n1) {
+  asdf=range01(data.frame(filter(markers11, cluster == i))[,'Ultimate.Positive'])
+  mat_nonzero <- which(asdf != 0, arr.ind = T); asdf[mat_nonzero]=range01(asdf[mat_nonzero]); veca <-list.append(veca,asdf)}
+veca1=unlist(veca);markers11 <- cbind(markers11,veca1)
+colnames(markers11)[14] <- "Scaled Ultimate Positive";vec=c()
+for(i in 1:length(markers11$myAUC)) {
+  if (markers11$myAUC[i] <= 0.5) {
+    if (markers11[i, 'Cluster Difference'] >= dif | markers11$pct.1[i]>min1 | markers11$pct.2[i]<min2 | pati[i]>medi) {vec[i] <- mana2[i]+(markers11$myAUC[i]-0.5)+0.5+mina2[i]+pati[i]+cd[i]*0.3}
+    else if (markers11[i, 'Cluster Difference'] >= min22 | markers11$pct.1[i]>min11 | markers11$pct.2[i]<min2 | pati[i]>medi) {vec[i]  <- mana2[i]*0.95+(markers11$myAUC[i]-0.5)+0.5+mina2[i]+pati[i]+cd[i]*0.25}
+    else if (markers11[i, 'Cluster Difference'] < min22 | markers11$pct.1[i]>min11 | markers11$pct.2[i]<min2 | pati[i]>medi){vec[i]  <- mana2[i]*0.8+(markers11$myAUC[i]-0.5)+0.5+mina2[i]*0.9+pati[i]*0.9+cd[i]*0.1}
+    else {vec[i]  <- mana2[i]*0.6+(markers11$myAUC[i]-0.5)+0.5+mina2[i]*0.75+pati[i]*0.75+cd[i]*0.08}
+  } else {vec[i] <-  0}}
+markers11 <- cbind(markers11,vec);colnames(markers11)[15] <- "Ultimate Negative" #c14=range01(vec)
+veca=list();n1=max(as.numeric(markers11[,7]));asdf=c();mat_nonzero=c()
+for(i in 1:n1) {
+  asdf=range01(data.frame(filter(markers11, cluster == i))[,'Ultimate.Negative']); mat_nonzero <- which(asdf != 0, arr.ind = T)
+  asdf[mat_nonzero]=range01(asdf[mat_nonzero]); veca <-list.append(veca,asdf)}
+veca1=unlist(veca);markers11 <- cbind(markers11,veca1);colnames(markers11)[16] <- "Scaled Ultimate Negative"
+markers11[is.na(markers11)] = 0;
+new_cols = c(8,14,1,2,3,4,5,6,7,9,10,11,12,13,15,16); markers11=markers11[new_cols]
+new_cols = c(1,2,16,7,6,10,11,12,3,4,5,8,9,13,14,15) #-9, 8,14,1,2,3,4,5,6,7,9,10,11,12,13,15,16 ; 1,2,16,7,6,10,11,12,3,4,5,8,9,13,14,15
+markers11=markers11[new_cols]; markers11=markers11 %>% mutate_all(~replace(., is.nan(.), 0)) #https://stackoverflow.com/questions/18142117/how-to-replace-nan-value-with-zero-in-a-huge-data-frame
+m1=max(as.numeric(markers11[,'cluster'])); #may need checking..
+myList<-list()# https://dplyr.tidyverse.org/reference/filter.html
+# for(i in 1:m1) {myList<-list.append(myList,data.frame(filter(markers11, cluster == i)[order(filter(markers11, cluster == i)[,2], decreasing=TRUE),]))}
+# for(i in 1:m1) {write.xlsx(data.frame(myList[i]), paste("D:/Results/Markers/tot/",i,".xlsx"),row.names = FALSE)} #can be also with row names: row.names = TRUE
+# m1=max(as.numeric(markers11[,'cluster'])) #may need checking..
+# myList<-list()# https://dplyr.tidyverse.org/reference/filter.html
+for(i in 1:m1) {myList<-list.append(myList,data.frame(filter(markers11, cluster == i)[order(filter(markers11, cluster == i)[,5], decreasing=TRUE),]))}
+for(i in 1:m1) {write.xlsx(data.frame(myList[i]), paste(i,".xlsx"),row.names = FALSE)} #can be also with row names: row.names = TRUE
+avgEt=AverageExpression(object =  epim); avgEt2 <- do.call("cbind",list(avgEt$SCT)) #This list is needed!
+krts2=rownames(avgEt2[grep('^Krt', rownames(avgEt2)),])
+krts22=rownames(avgEt2[grep('^Wnt', rownames(avgEt2)),])
+krts2=append(krts2, c("Epcam","Pitx2","Sox2","Foxi3","Sostdc1", "Dlx2", "Lef1", "p63", "Shh", "Noggin", "Sema3f",'Isl1', 'CD146', 'Nemo', 'Apc', 'Amel',
+                      "Fgf8", "Hh", "Axin2", "FzD6", "Sp6", "Edar","Tgfb1","Lgr5", "Dkk3", "Igfp5", "Sfn","Odam", 'Stro-1', 'Edaradd', 'Il11ra',
+                      "Fdcsp", "Slpi", "Odam", "Tuba1b", "Il1a", "Il1b", 'Pax9', 'Msx1', 'Msx2', 'Bmp2', 'Bmp4', 'Tbx3', 'Tbx2', 'Irf6', 'Irf6', 'Des',
+                      "Bmi1", "ABCG2", "Oct3/4", "Oct3", "Oct4","Yap", "Gli1", "Lrig1", "Fgf10", "p21", "Dkk4", "Fgf9", "Fgf20", 'Edar', 'Dsp', 'Dspp',
+                      'Ptma', 'Tpt1', 'Enam', 'Amelx','Mmp20', 'Amtn', 'Klk4', 'Dbi', 'Acta1','Actb','Pttg1', 'Atf3', 'Cldn10', 'Runx2',
+                      'Ambn','Sfrp5', 'Tbx1', 'Dmp1', 'Notch1', 'Notch2', 'Ccl12', 'Pttg1', 'Atf3', 'Trfc', 'Ntrk2', 'Foxa1', 'Foxa2',
+                      'Gjb6', 'Skap2', 'Lgr6', 'Lmo1', 'Gria2', 'Pcdh9', 'Kenh7', 'Lgals7', 'Pcp4l1', 'Npr3', 'Robo2', 'Kitl', 'Sic4a4', 'Cntn2', 'Unc5c', 'Rxfp1', 'Gjb2', 'Kcnj2', 
+                      'Meis1', 'Col12a1', 'Timp3', 'Prss23', 'Ednrb', 'Ddit4l', 'Gad1', 'Sp5', 'Proser2', 'Pkp1', 'Ppl', 'Nebi', 'Marveld2', 'Tagln', 
+                      'Acta2', 'Cpm', 'Dmrt2', 'Zcchc5', 'Rprm', 'Wisp1', 'Frnde1', 'Ntn1', 'Pax9', 'Foxc1',  'Hpca', 'Col14a1', 'Col9a1', 'Hpgd'))
+krts2=append(krts2,krts22);krts2=krts2[krts2 %in% rownames(avgEt2)]
+krt_DE1=markers11[markers11[,'gene'] %in% krts2,]#Check markers1 to 2 and vice versa
+kde1=sort(unique(krt_DE1$cluster));krt_DE1 = na.omit(krt_DE1)
+ips=krt_DE1[order(krt_DE1[,'p_val_adj'],decreasing=TRUE),] %>% tbl_df %>% print(n=Inf) #or Ultimate Positive 
+write.csv(krt_DE1,'Epithelial Genes.csv')
+
+#Näillä selviää Monocle Pseudotimen alku:
+jpeg("pseudotime_PC1a.jpg", width = 12000, height = 9000, quality = 100,pointsize = 16, res=1200);
+epim$pseudotime_PC1 <- rank(-epim@reductions[["pca"]]@cell.embeddings[,1])  # rank cells by their PC1 score
+ggplot(as.data.frame(epim[[]]), aes(x = pseudotime_PC1, y = seurat_clusters, colour = seurat_clusters)) +geom_quasirandom(groupOnX = FALSE);dev.off() 
+
+p1_avg=AverageExpression(object = epim); inter=c('Pitx2','Sox2','Shh','Foxi3','Krt14', 'Epcam') #Max sox2 clusterin selvitykseen:
+ce=as.numeric(names(table(epim$seurat_clusters))); jang=c()
+for(i in 1:6) {jang=append(jang,list(p1_avg$integrated[which(rownames(p1_avg$integrated) %in% inter[i]),][ce]))} 
+jang=data.frame(jang); colnames(jang)=inter; 
+write.csv(jang, file = "epim_genes.csv",quote = F) # https://statistics.berkeley.edu/computing/r-t-tests
+#Ks alku Sox2:n ja pseudotime_PC1 min clusterin mukaan (!!!)
+
+library("monocle3");
+gene_annotation <- as.data.frame(rownames(epim@reductions[["pca"]]@feature.loadings), row.names = rownames(epim@reductions[["pca"]]@feature.loadings))
+colnames(gene_annotation) <- "gene_short_name"
+cell_metadata <- as.data.frame(epim@assays[["RNA"]]@counts@Dimnames[[2]], row.names = epim@assays[["RNA"]]@counts@Dimnames[[2]])
+colnames(cell_metadata) <- "barcode"
+New_matrix <- epim@assays[["RNA"]]@counts
+New_matrix <- New_matrix[rownames(epim@reductions[["pca"]]@feature.loadings), ]
+expression_matrix <- New_matrix
+cds_from_edt3=c()
+cds_from_edt3 <- new_cell_data_set(expression_matrix,cell_metadata = cell_metadata,gene_metadata = gene_annotation)
+recreate.partition <- c(rep(1, length(cds_from_edt3@colData@rownames)))
+names(recreate.partition) <- cds_from_edt3@colData@rownames
+recreate.partition <- as.factor(recreate.partition)
+cds_from_edt3@clusters@listData[["UMAP"]][["partitions"]] <- recreate.partition
+list_cluster <- epim@meta.data[[sprintf("seurat_clusters")]]# epim@meta.data[[sprintf("ClusterNames_%s_%sPC", cluster.res, nPC)]]
+names(list_cluster) <- epim@assays[["RNA"]]@data@Dimnames[[2]]
+cds_from_edt3@clusters@listData[["UMAP"]][["clusters"]] <- list_cluster
+cds_from_edt3@clusters@listData[["UMAP"]][["louvain_res"]] <- "NA"
+cds_from_edt3@int_colData@listData$reducedDims$UMAP =  epim@reductions[["umap"]]@cell.embeddings
+# cds_from_edt3@reduce_dim_aux$gene_loadings <- epim@reductions[["pca"]]@feature.loadings
+cds_from_edt3 <- learn_graph(cds_from_edt3, use_partition = TRUE)
+cds_from_edt3 <- order_cells(cds_from_edt3)#Select Mesenchymal cells points in the middle and epithelial otherwise (in the surface) # plot trajectories colored by pseudotime
+jpeg("Monocle_pseudotime.jpg", width = 12000, height = 9000, quality = 100,pointsize = 16, res=1200);
+plot_cells(cds= cds_from_edt3,color_cells_by = "pseudotime",show_trajectory_graph = TRUE);dev.off() 
+#In case you want to change the luster numbers after knowing the approximate pseudotime development:
+# cal=c('1', "2", "3",'4','5','6','7','8','9','10','11','12') #It should be around 5, since cluster 8 and 1 are oddish.. ,'9','10','11',"12","13","14",'15','16'
+# cyl=c('1', "2", "3",'4','5','6','7','8','9','10','11','4')
+#Open pseudotime, PC_pseudotime, Stages, Sox2 expression and clusters at the same time to get the numbers 1-11 to right order as per lineage...
+# "8", "6", "2",'13','4','9','11','3','1','12','7',"10","5",'14'
+# current.cluster.ids <- cal
+# new.cluster.ids <- cyl #or e.g.:
+# epim@active.ident <- plyr::mapvalues(x =  epim@active.ident , from = current.cluster.ids, to = new.cluster.ids)
+# epim$seurat_clusters <- plyr::mapvalues(x =  epim$seurat_clusters , from = current.cluster.ids, to = new.cluster.ids)
+# DimPlot( epim,reduction="umap",pt.size = 5.5, label = TRUE, label.size = 7,group.by = 'ident') + ggtitle("")+ guides(colour = guide_legend(override.aes = list(size=10)))
+
+DefaultAssay( epim) <- "integrated" #this is important! #epix<- subset(x = epim, idents = c(4,5,6,7,8,9,11,12)) #3,4,5,6,7,8
+GAD1=GetAssayData(object = epim) #dim(GAD1) # > dim(GAD1) # [1] 16154    6970
+GAD11=rowMeans(GAD1) #GAD1[rownames(GAD1)=='Sox2',]  #length(GAD11) is 3800, which(rownames(GAD1)=='Sox2'), 3773:which(names(GAD11[rev(order(GAD11))])=='Sox2') -> ok to find out sox2
+features1=names(GAD11[(order(GAD11))][length(GAD11):(length(GAD11)-30)]) #,16755:16706, 3780, 50% genes in the middle.. sum(names(GAD11[rev(order(GAD11))][1:212])=='Sox2') 212:sta #length(features1) 
+jpeg("Top30_Heatmap_int.jpg", width = 12000, height = 9000, quality = 100,pointsize = 16, res=1200);
+DoHeatmap(subset(epim, downsample = 100), features = features1, size = 3, slot='data') +labs(color = "Cluster");dev.off() 
+
+DefaultAssay( epim) <- "SCT";#RNA SCT integrated  
+epima=epim;  #Could be also epin, sm, mesa, epim etc., check this!
+setwd(dir='D:/Data for Seurat Analysis/filtered_gene_bc_matrices/Data Filtered and Processed in Seurat')
+txist <- readRDS("sce2.rds"); 
+n1=colnames(epima);n11=substr(n1, 1, 16); 
+txist <- txist[,  colnames(txist)  %in% n11] #note the variable features!
+epima=epima[, n11 %in% colnames(txist)] 
+n1=colnames(epima); n11=substr(n1, 1, 16); euna=make.names(n11, unique=TRUE)
+epima=RenameCells(epima, new.names = euna) #non-unique values when setting 'row.names': 'AAGGAATCAGTTTCGA', 'GAATCGTCAGTTACCA', 'GAATCGTTCCGCAGTG', 'GGGACAAGTGATTGGG', 'GGTGAAGTCTGCTAGA', 'TGGGTTAGTCATGACT'
+epima=epima[, unique(n11)] #no nyt.. :)
+n1=colnames(colnames(txist));n11=substr(n1, 1, 16);
+euna=make.names(colnames(txist), unique=TRUE); n1=euna;n11=substr(n1, 1, 16);
+colnames(txist)=euna ; txist <- txist[,  unique(n11) ] 
+genes=rownames(txist);genes2=substr(genes,1,18) ##https://www.biostars.org/p/9461429/
+ensembl <- useMart('ensembl', dataset = 'mmusculus_gene_ensembl'); 
+annot <- getBM(attributes = c('mgi_symbol','external_gene_name','ensembl_gene_id','entrezgene_id','gene_biotype'),filters = 'ensembl_gene_id',values = genes2,mart = ensembl)
+annot <- merge(x = as.data.frame(genes2),y = annot, by.y = 'ensembl_gene_id', all.x = T, by.x = 'genes2') # which(genes2  %in%  annot[which(annot[,'ensembl_gene_id'] %in% genes2),3])
+annotr1=distinct(annot, annot[,3], .keep_all = TRUE); annotr1=distinct(annotr1, annotr1[,2], .keep_all = TRUE);
+jo=annotr1[,1];jo[which(is.na(jo))]='geneNA';rownames(annotr1)=jo;annotr2=annotr1[genes2,1:5];annotr3=annotr2[!is.na(annotr2[,1]),]
+annotr3=distinct(annotr3, annotr3[,1], .keep_all = TRUE); gc(); memory.limit(9999999999999)
+#annotr3[annotr3[,1]=='Pitx2',] #Sox2: ENSMUSG00000074637, Pitx2: ENSMUSG00000028023, and
+txist=txist[genes2 %in% rownames(annotr3), 1:dim(txist)[2], drop=TRUE] 
+rownames(txist)=annotr3[,3]; 
+rownames(txist)=gsub("-", ".", rownames(txist)) 
+#https://stackoverflow.com/questions/11936339/replace-specific-characters-within-strings
+euna2=make.names(rownames(txist), unique=TRUE); rownames(txist)=euna2
+clusters=epima[[]][colnames(txist),'seurat_clusters']; #etoat is in the old form..
+clusters=data.frame(clusters); 
+clusters$clusters=as.character(clusters$clusters)
+clusters[is.na(clusters)] = 100 
+colData(txist)$clusters =clusters; asdfdf=txist
+txist=txist[, as.vector(clusters!=100)] #colData(txist)$clusters!=100] #https://www.statmethods.net/management/operators.html
+DefaultAssay( epima) <- "SCT" #Check!!
+txist <- txist[rownames(txist) %in% VariableFeatures(epima) ,] #either this or:
+# txist <- txist[rownames(txist) %in% rownames(epima) ,]
+#If you are including hte variable features, then the saving will take like 10 minutes...VariableFeatures(epima)
+epima=epima[rownames(epima) %in% rownames(txist), ] #no nyt.. :)
+n1=colnames(colnames(txist));n11=substr(n1, 1, 16);euna=make.names(colnames(txist), unique=TRUE)
+n1=euna;n11=substr(n1, 1, 16);z=unique(n11); n1=colnames(epima);n11=substr(n1, 1, 16); euna=make.names(n11, unique=TRUE)
+epima=RenameCells(epima, new.names = euna) #non-unique values when setting 'row.names': 'AAGGAATCAGTTTCGA', 'GAATCGTCAGTTACCA', 'GAATCGTTCCGCAGTG', 'GGGACAAGTGATTGGG', 'GGTGAAGTCTGCTAGA', 'TGGGTTAGTCATGACT'
+epima=epima[, z] #no nyt..
+#Colors for python:
+identities <- levels(epima@active.ident)
+my_color_palette <- hue_pal()(length(identities)); my_color_palette
+DimPlot(epima, reduction = "umap",pt.size = 2.5, label = TRUE, label.size = 7,group.by = 'seurat_clusters') 
+setwd(dir=ok)
+#Nyt toimi:
+SaveH5Seurat(epima, filename = "pbmc4k.h5Seurat");Convert("pbmc4k.h5Seurat", dest = "h5ad")
+spliced <- t(assay(txist, "spliced")); unspliced <- t(assay(txist, "unspliced"));gc();memory.limit(9999999999999); #If you have all genes, this takes time... like 5m
+sp1=as.data.frame(as.matrix(spliced));name='okna';maht=new_unique(c("rspliced",name), ".csv", ask=FALSE)
+write.csv(sp1 ,file = maht) ;gc(); memory.limit(9999999999999); us=as.data.frame(as.matrix(unspliced));
+maht=new_unique(c("runspliced",name), ".csv", ask=FALSE);write.csv(us ,file = maht);gc();memory.limit(9999999999999);
+write.csv(colData(txist)$clusters, file = 'clustersokna.csv',row.names = TRUE)  
+write.csv(my_color_palette ,file = 'clustersokna2.csv',row.names = TRUE) 
+
+#%% Monocle2: http://cole-trapnell-lab.github.io/monocle-release/docs_mobile/
+# BiocManager::install('monocle')
+library(Seurat);
+library(monocle) #do not load monocle3
+#https://github.com/cole-trapnell-lab/monocle-release/issues/434 
+library(DDRTree);
+devtools::load_all("C:/rlibs/4.2.1/monocle") #check your monocle... it needs to be '9.11.22' version
+# BiocManager::install(c("DDRTree", "pheatmap"))
+# install.packages("reshape"); library(reshape)
+# saveRDS(epim, file = "epim_f_r0.6_pcs8_281022.rds")
+ok='D:/Data for Seurat Analysis/filtered_gene_bc_matrices/Data Filtered and Processed in Seurat/E11-16_Pitx2vmeo2'
+setwd(dir=ok)
+epim <- readRDS(file = "epim_f_ok_281122.rds")
+epim$stages=epim$orig.ident
+e11=which(epim$stages %in% c('E11.5','E11.5_1','E11.5_2','E11.5_3','E11.5_4','E11.5_5','E11.5_6','E11.5_7','E11.5_8')) #unique(epim$stages)
+e14=which(epim$stages %in% c('E14.25','E16.5_1','E16.5_2','E16.5_3','E16.5_4','E16.5_5','E16.5_6'))
+e16=which(epim$stages %in% c('E16.5','E16.5_1','E16.5_2'))
+epim$stages[e11]=-0.5
+epim$stages[e14]=0 #'Our'
+epim$stages[e16]=0.5
+DimPlot( epim, reduction = "umap",pt.size = 5.5, label = TRUE, label.size =14 ,group.by = 'seurat_clusters') + ggtitle('') + guides(colour = guide_legend(override.aes = list(size=8)))
+# setwd(dir='D:/Data for Seurat Analysis/filtered_gene_bc_matrices/Data Filtered and Processed in Seurat/E11-16_Pitx2')
+# epim2 <- readRDS(file = "epim_f_r0.45_pcs8_271022.rds")
+#Load Seurat object
+seurat_object <- epim#readRDS('seurat_object.rds')
+#Extract data, phenotype data, and feature data from the SeuratObject
+data <- as(as.matrix(seurat_object@assays$RNA@data), 'sparseMatrix') #I will use the integrated data...
+pd <- new('AnnotatedDataFrame', data = seurat_object@meta.data)
+fData <- data.frame(gene_short_name = row.names(data), row.names = row.names(data))
+fd <- new('AnnotatedDataFrame', data = fData)
+#Construct monocle cds
+monocle_cds <- newCellDataSet(data,
+                              phenoData = pd,
+                              featureData = fd,
+                              lowerDetectionLimit = 0.5,
+                              expressionFamily = negbinomial.size()) # :) worked, but only with right load_all monocle folder...
+#https://github.com/cole-trapnell-lab/monocle-release/issues/262
+HSMM=monocle_cds
+HSMM <- estimateSizeFactors(HSMM)
+HSMM <- estimateDispersions(HSMM)
+HSMM <- detectGenes(HSMM, min_expr = 0.1)
+# print(head(featureData(HSMM)))
+head(fData(HSMM))
+expressed_genes <- row.names(subset(fData(HSMM), num_cells_expressed >= 10))
+head(pData(HSMM)); head(fData(HSMM))
+#Cells were filtered...
+
+#Genes:
+pData(HSMM)$Total_mRNAs <- Matrix::colSums(exprs(HSMM))
+
+HSMM <- HSMM[,pData(HSMM)$Total_mRNAs < max(pData(HSMM)$Total_mRNAs)] #max(pData(HSMM)$Total_mRNAs)
+
+upper_bound <- 10^(mean(log10(pData(HSMM)$Total_mRNAs)) +
+                     2*sd(log10(pData(HSMM)$Total_mRNAs)))
+lower_bound <- 10^(mean(log10(pData(HSMM)$Total_mRNAs)) -
+                     2*sd(log10(pData(HSMM)$Total_mRNAs)))
+HSMM <- HSMM[,pData(HSMM)$Total_mRNAs > lower_bound & pData(HSMM)$Total_mRNAs < upper_bound]
+HSMM <- detectGenes(HSMM, min_expr = 0.1)
+
+# Log-transform each value in the expression matrix.
+L <- log(exprs(HSMM[expressed_genes,]))
+# Standardize each gene, so that they are all on the same scale,
+# Then melt the data with plyr so we can plot it easily
+melted_dens_df <- melt(Matrix::t(scale(Matrix::t(L))))
+# Plot the distribution of the standardized gene expression values.
+ggplot(geom = "density", data = melted_dens_df) +
+  stat_function(fun = dnorm, size = 0.5, color = 'red') +
+  xlab("Standardized log(FPKM)") +
+  ylab("Density")
+
+#Classifying cells by type
+Stem_id <- row.names(subset(fData(HSMM), gene_short_name == "Sox2"))
+Sonic_id <- row.names(subset(fData(HSMM), gene_short_name == "Shh")) #I.e. Pulp-like
+
+cth <- newCellTypeHierarchy()
+cth <- addCellType(cth, "Stem", classify_func = function(x) { x[Stem_id,] >= 1 })
+cth <- addCellType(cth, "Sonic", classify_func = function(x) { x[Sonic_id,] >= 1 })
+# cth <- addCellType(cth, "Fibroblast", classify_func = function(x) { x[MYF5_id,] < 1 & x[ANPEP_id,] > 1 })
+HSMM <- classifyCells(HSMM, cth, 0.1)
+table(pData(HSMM)$CellType)
+# Ambiguous     Sonic      Stem   Unknown 
+# 55       717       569      2813 
+
+pie <- ggplot(pData(HSMM), aes(x = factor(1), fill = factor(CellType))) +
+  geom_bar(width = 1)
+pie + coord_polar(theta = "y") +
+  theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+
+disp_table <- dispersionTable(HSMM)
+unsup_clustering_genes <- subset(disp_table, mean_expression >= 0.1)
+HSMM <- setOrderingFilter(HSMM, unsup_clustering_genes$gene_id)
+plot_ordering_genes(HSMM)
+
+# HSMM@auxClusteringData[["tSNE"]]$variance_explained <- NULL
+plot_pc_variance_explained(HSMM, return_all = F,norm_method = 'log') # norm_method = 'log',
+HSMM <- reduceDimension(HSMM, max_components = 2, num_dim = 8,
+                        reduction_method = 'tSNE', verbose = T) #dim 6-8
+# HSMM <- orderCells(HSMM)
+HSMM <- clusterCells(HSMM, num_clusters = 4)
+plot_cell_clusters(HSMM, 1, 2, color = "CellType", markers = c("Sox2", "Shh"))
+marker_diff <- markerDiffTable(HSMM[expressed_genes,],
+                               cth,
+                               residualModelFormulaStr = "~num_genes_expressed",
+                               cores = 1)
+candidate_clustering_genes <- row.names(subset(marker_diff, qval < 0.01))
+marker_spec <- calculateMarkerSpecificity(HSMM[candidate_clustering_genes,], cth)
+
+head(selectTopMarkers(marker_spec, 3))  
+semisup_clustering_genes <- unique(selectTopMarkers(marker_spec, 500)$gene_id)
+HSMM <- setOrderingFilter(HSMM, semisup_clustering_genes)
+plot_ordering_genes(HSMM)
+
+plot_pc_variance_explained(HSMM, return_all = F)
+
+HSMM <- reduceDimension(HSMM, max_components = 2, num_dim = 8, norm_method = 'log',
+                        reduction_method = 'tSNE',
+                        residualModelFormulaStr = "~G2M.Score + num_genes_expressed",
+                        verbose = T)
+
+HSMM <- clusterCells(HSMM, num_clusters = 5,assay.type=normcounts(HSMM) )
+
+plot_cell_clusters(HSMM, 1, 2, color = "CellType")
+
+HSMM_SC <- HSMM[,pData(HSMM)$CellType == "Stem"] #Check the celltype...
+HSMM_SC <- estimateDispersions(HSMM_SC)
+diff_test_res <- differentialGeneTest(HSMM_SC[expressed_genes,],fullModelFormulaStr = "~stages")
+# diff_test_res2 <- differentialGeneTest(HSMM_SC[expressed_genes,],fullModelFormulaStr = "~orig.ident") #G2M.Score
+ordering_genes <- row.names(subset(diff_test_res, qval < 0.01))
+
+# diff_test_res <- differentialGeneTest(HSMM_myo[expressed_genes,],fullModelFormulaStr = "~sm.ns(Pseudotime)") #note the different dataset...
+sig_gene_names <- row.names(subset(diff_test_res, qval < 0.00000000000001))
+plot_pseudotime_heatmap(HSMM_myo[sig_gene_names,],num_clusters = 8, cores = 1,show_rownames = T)
+
+print(head(pData(HSMM_myo))) 
+
+HSMM_myo=HSMM_SC
+HSMM_myo <- setOrderingFilter(HSMM_myo, ordering_genes)
+plot_ordering_genes(HSMM_myo)
+HSMM_myo <- reduceDimension(HSMM_myo, max_components = 2, method = 'DDRTree')
+HSMM_myo <- orderCells(HSMM_myo)
+plot_cell_trajectory(HSMM_myo, color_by = "orig.ident")+ylim(-1, 1)
+
+GM_state <- function(cds){if (length(unique(pData(cds)$State)) > 1){T0_counts <- table(pData(cds)$State, pData(cds)$orig.ident)[,"E11.5"]
+    return(as.numeric(names(T0_counts)[which(T0_counts == max(T0_counts))]))
+  }else {return (1)}}
+HSMM_myo <- orderCells(HSMM_myo); HSMM_myo <- orderCells(HSMM_myo, root_state = GM_state(HSMM_myo)) 
+plot_cell_trajectory(HSMM_myo, color_by = "Pseudotime")+ylim(-1, 1)
+plot_cell_trajectory(HSMM_myo, color_by = "State") + facet_wrap(~State, nrow = 1)+ylim(-1, 1)
+plot_cell_trajectory(HSMM_myo, color_by = "stages")+ylim(-1, 1)
+
+blast_genes <- row.names(subset(fData(HSMM_myo), gene_short_name %in% c("Shh", "Npnt", "Sox2", 'Nphs1')))
+plot_genes_jitter(HSMM_myo[blast_genes,], grouping = "State", min_expr = 0.1)
+
+HSMM_expressed_genes <-  row.names(subset(fData(HSMM_myo),num_cells_expressed >= 10))
+HSMM_filtered <- HSMM_myo[HSMM_expressed_genes,]
+my_genes <- row.names(subset(fData(HSMM_filtered),gene_short_name %in% c("Shh", "Npnt", "Sox2", 'Nphs1')))
+cds_subset <- HSMM_filtered[my_genes,]
+plot_genes_in_pseudotime(cds_subset, color_by = "seurat_clusters")+xlim(7, 17)
+# +ylim(-1, 1)
+
+
+#Different way to go, ho, first select the cells you want:
+Stem_id <- row.names(subset(fData(HSMM), gene_short_name == "Sox2"))# Sonic_id <- row.names(subset(fData(HSMM), gene_short_name == "Shh")) #I.e. Pulp-like
+cth <- newCellTypeHierarchy()
+cth <- addCellType(cth, "Stem", classify_func = function(x) { x[Stem_id,] >= 0.1 })
+HSMM <- classifyCells(HSMM, cth, 0.1)
+table(pData(HSMM)$CellType)
+pie <- ggplot(pData(HSMM), aes(x = factor(1), fill = factor(CellType))) +geom_bar(width = 1)
+pie + coord_polar(theta = "y") +theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+HSMM_SC <- HSMM[,pData(HSMM)$CellType == "Stem"]
+HSMM_myo=HSMM_SC
+
+HSMM_myo <- detectGenes(HSMM_myo, min_expr = 0.1)
+fData(HSMM_myo)$use_for_ordering <- fData(HSMM_myo)$num_cells_expressed > 0.05 * ncol(HSMM_myo)
+plot_pc_variance_explained(HSMM_myo, return_all = F)
+HSMM_myo <- reduceDimension(HSMM_myo, max_components = 2, norm_method = 'log', num_dim = 3, reduction_method = 'tSNE', verbose = T)
+HSMM_myo <- clusterCells(HSMM_myo, verbose = F) #
+HSMM_myo <- clusterCells(HSMM_myo, verbose = F, method='leiden') #needed to use the original function: https://github.com/cole-trapnell-lab/monocle-release/blob/master/R/clustering.R
+plot_cell_clusters(HSMM_myo, color_by = 'as.factor(seurat_clusters)')
+plot_cell_clusters(HSMM_myo, color_by = 'as.factor(orig.ident)')
+plot_rho_delta(HSMM_myo, rho_threshold = 2, delta_threshold = 4 )
+HSMM_myo <- clusterCells(HSMM_myo,rho_threshold = 4,delta_threshold = 3,skip_rho_sigma = T,verbose = F)
+HSMM_expressed_genes <-  row.names(subset(fData(HSMM_myo),num_cells_expressed >= 10))
+clustering_DEG_genes <- differentialGeneTest(HSMM_myo[HSMM_expressed_genes,],fullModelFormulaStr = '~Cluster',cores = 1)
+HSMM_ordering_genes <- row.names(clustering_DEG_genes)[order(clustering_DEG_genes$qval)][1:1000]
+HSMM_myo <- setOrderingFilter(HSMM_myo, ordering_genes = HSMM_ordering_genes)
+HSMM_myo <- reduceDimension(HSMM_myo, method = 'DDRTree')
+HSMM_myo <- orderCells(HSMM_myo)
+HSMM_myo <- orderCells(HSMM_myo, root_state = GM_state(HSMM_myo))
+plot_cell_trajectory(HSMM_myo, color_by = "orig.ident")
++ylim(-1, 1)
+plot_cell_trajectory(HSMM_myo, color_by = "Pseudotime")
++ylim(-1, 1)
+plot_cell_trajectory(HSMM_myo, color_by = "seurat_clusters")
++ylim(-1, 1)
+to_be_tested <- row.names(subset(fData(HSMM),gene_short_name %in% c("Cenpf", "Npnt", "Sox2", 'Pitx2')))
+cds_subset <- HSMM_myo[to_be_tested,]
+diff_test_res <- differentialGeneTest(cds_subset,fullModelFormulaStr = "~sm.ns(Pseudotime)")
+diff_test_res[,c("gene_short_name", "pval", "qval")]
+plot_genes_in_pseudotime(cds_subset, color_by = "orig.ident")
+plot_genes_in_pseudotime(cds_subset, color_by = "seurat_clusters")
+marker_genes <- row.names(subset(fData(HSMM_myo),gene_short_name %in% c("Cenpf", "Npnt", "Sox2", 'Pitx2')))
+# diff_test_res <- differentialGeneTest(HSMM_myo,fullModelFormulaStr = "~Cluster") #Check what you have...
+diff_test_res <- differentialGeneTest(HSMM_myo,fullModelFormulaStr = "~sm.ns(Pseudotime, df=3)")
+sig_gene_names <- row.names(subset(diff_test_res, qval < 0.000000000000001))
+plot_pseudotime_heatmap(HSMM_myo[sig_gene_names,],num_clusters = 8, cores = 1,show_rownames = T)
+print(head(pData(HSMM_myo))) 
+# https://biit.cs.ut.ee/gprofiler/gost
+
+
+#%%Pathway analysis, jeihou-tyyppinen:
+# https://bioconductor.org/packages/release/bioc/vignettes/ReactomeGSA/inst/doc/analysing-scRNAseq.html
+BiocManager::install(c("ReactomeGSA"))
+library(ReactomeGSA)
+
+#Doing the analysis:
+gsva_result <- analyse_sc_clusters(epim, verbose = TRUE)
+gsva_result
+
+#pathways returns the pathway-level expression values per cell cluster:
+pathway_expression <- pathways(gsva_result)
+# simplify the column names by removing the default dataset identifier
+colnames(pathway_expression) <- gsub("\\.Seurat", "", colnames(pathway_expression))
+pathway_expression[1:3,]
+
+#A simple approach to find the most relevant pathways is to assess the maximum difference in expression for every pathway:
+# find the maximum differently expressed pathway
+max_difference <- do.call(rbind, apply(pathway_expression, 1, function(row) {
+  values <- as.numeric(row[2:length(row)])
+  return(data.frame(name = row[1], min = min(values), max = max(values)))}))
+max_difference$diff <- max_difference$max - max_difference$min
+# sort based on the difference
+max_difference <- max_difference[order(max_difference$diff, decreasing = T), ]
+head(max_difference)
+
+# # Plotting the results
+# The ReactomeGSA package contains two functions to visualize these pathway results. The first simply plots the expression for a selected pathway:
+plot_gsva_pathway(gsva_result, pathway_id = rownames(max_difference)[1])
+# For a better overview, the expression of multiple pathways can be shown as a heatmap using gplots heatmap.2 function:
+# Additional parameters are directly passed to gplots heatmap.2 function
+plot_gsva_heatmap(gsva_result, max_pathways = 15, margins = c(6,20))
+
+# The plot_gsva_heatmap function can also be used to only display specific pahtways:
+# limit to selected B cell related pathways
+relevant_pathways <- c("R-HSA-9026766", "R-HSA-211916", "R-HSA-9636003", "R-HSA-1299308", "R-HSA-2142696")
+plot_gsva_heatmap(gsva_result, 
+                  pathway_ids = relevant_pathways, # limit to these pathways
+                  margins = c(6,30), # adapt the figure margins in heatmap.2
+                  dendrogram = "col", # only plot column dendrogram
+                  scale = "row", # scale for each pathway
+                  key = FALSE, # don't display the color key
+                  lwid=c(0.1,4)) # remove the white space on the left
+# Pathway-level PCA
+# The pathway-level expression analysis can also be used to run a Principal Component Analysis on the samples. This is simplified through the function plot_gsva_pca:
+plot_gsva_pca(gsva_result)
+
+#CellChat
+#The pipline:https://htmlpreview.github.io/?https://github.com/sqjin/CellChat/blob/master/tutorial/CellChat-vignette.html
+#The packages etc.:
+library('dplyr') ;library('igraph') ;library('ggplot2') ;library('future') ;library('future.apply');library('pbapply') ;library('irlba') 
+library('NMF') ;library('ggalluvial') ;library('stringr') ;library('svglite') ;library('expm') 
+library('Rtsne') ;library('ggrepel') ;library('circlize') ;library('RColorBrewer') ;library('cowplot') ;library('ComplexHeatmap') ;library('RSpectra') 
+library('Rcpp') ;library('RcppEigen');library('reticulate') ;library('scales') ;library('sna') ;library('forcats') ;library('reshape2') ;library('FNN') ;library('shape') 
+library('BiocGenerics') ;library('magrittr') ;library('patchwork') ;library('colorspace') ;library('plyr');library(patchwork);options(stringsAsFactors = FALSE)
+# You need to have rtools: https://cran.r-project.org/bin/windows/Rtools/rtools40.html
+write('PATH="${RTOOLS40_HOME}\\usr\\bin;${PATH}"', file = "~/.Renviron", append = TRUE); library(CellChat) #One of the non-obvious things # devtools::install_github("sqjin/CellChat")
+#+load the normals..
+ok='D:/Data for Seurat Analysis/filtered_gene_bc_matrices/Data Filtered and Processed in Seurat/E11-16_Pitx2vmeo2' #E11-16_Pitx2vmeo
+setwd(dir=ok)
+epim <- readRDS(file = "epim_f_ok_281122.rds") #"epim_f2_r0.5_pcs16_101122.rds"
+DimPlot( epim, reduction = "umap",pt.size = 5.5, label = TRUE, label.size =14 ,group.by = 'seurat_clusters') + ggtitle('') + guides(colour = guide_legend(override.aes = list(size=8)))
+iso=epim # Quite often one or two steps are not clearly explained, such as normalization: https://rdrr.io/github/sqjin/CellChat/man/normalizeData.html
+data.input=normalizeData(iso[["RNA"]]@data, scale.factor = 10000, do.log = TRUE)
+meta = iso[[]]; unique(meta$seurat_clusters) # check the cell labels
+cellchat <- createCellChat(object = data.input, meta = meta, group.by = "seurat_clusters"); cellchat <- addMeta(cellchat, meta = meta); cellchat <- setIdent(cellchat, ident.use = "seurat_clusters") # set "labels" as default cell identity
+levels(cellchat@idents) # show factor levels of the cell labels
+groupSize <- as.numeric(table(cellchat@idents)) # number of cells in each cell group
+#Set the ligand-receptor interaction database
+CellChatDB <- CellChatDB.mouse  # use  CellChatDB.human if running on mouse/huma data
+showDatabaseCategory(CellChatDB)
+# Show the structure of the database
+dplyr::glimpse(CellChatDB$interaction)
+# use a subset of CellChatDB for cell-cell communication analysis
+CellChatDB.use <- subsetDB(CellChatDB, search = "Secreted Signaling") # use Secreted Signaling
+# use all CellChatDB for cell-cell communication analysis# set the used database in the object
+cellchat@DB <- CellChatDB.use 
+#The below are needed due: https://github.com/sqjin/CellChat/issues/96
+showDatabaseCategory(CellChatDB)
+cellchat@DB <- CellChatDB
+#Preprocessing the expression data for cell-cell communication analysis
+# subset the expression data of signaling genes for saving computation cost
+cellchat <- subsetData(cellchat) # This step is necessary even if using the whole database
+future::plan("multisession", workers = 4) # do parallel , multisession; did not work, but after restart of R it did: https://github.com/lme4/lme4/issues/407
+cellchat <- identifyOverExpressedGenes(cellchat) #~5min with own data
+cellchat <- identifyOverExpressedInteractions(cellchat) #fast
+# project gene expression data onto PPI network (optional)
+cellchat <- projectData(cellchat, PPI.mouse)
+#Compute the communication probability and infer cellular communication network # you need original data.. https://github.com/sqjin/CellChat/issues/300
+gc(); memory.limit(9999999999999)
+
+#Takes around 10min with own data, do no drive anything else; 15:18-22
+cellchat <- computeCommunProb(cellchat) 
+# Filter out the cell-cell communication if there are only few number of cells in certain cell groups
+cellchat <- filterCommunication(cellchat, min.cells = 10)
+#Extract the inferred cellular communication network as a data frame
+df.net <- subsetCommunication(cellchat)
+df.net <- subsetCommunication(cellchat, sources.use = c(9), targets.use = c(7,3,8,2))
+# df.net <- subsetCommunication(cellchat, signaling = c("WNT", "TGFb"))
+
+#Infer the cell-cell communication at a signaling pathway level
+cellchat <- computeCommunProbPathway(cellchat)
+cellchat <- aggregateNet(cellchat)
+groupSize <- as.numeric(table(cellchat@idents))
+par(mfrow = c(1,2), xpd=TRUE)
+netVisual_circle(cellchat@net$count, vertex.weight = groupSize, weight.scale = T, label.edge= F, title.name = "Number of interactions") #creates image
+netVisual_circle(cellchat@net$weight, vertex.weight = groupSize, weight.scale = T, label.edge= F, title.name = "Interaction weights/strength") #creates image
+mat <- cellchat@net$weight; par(mfrow = c(3,4), xpd=TRUE)
+for (i in 1:nrow(mat)) {mat2 <- matrix(0, nrow = nrow(mat), ncol = ncol(mat), dimnames = dimnames(mat)); mat2[i, ] <- mat[i, ]
+  netVisual_circle(mat2, vertex.weight = groupSize, weight.scale = T, edge.weight.max = max(mat), title.name = rownames(mat)[i])}
+# Visualize each signaling pathway using Hierarchy plot, Circle plot or Chord diagram
+pathways.show <- c("BMP") #pathways.show.all <- cellchat@netP$pathways
+# Hierarchy plot # Here we define `vertex.receive` so that the left portion of the hierarchy plot shows signaling to fibroblast and the right portion shows signaling to immune cells 
+vertex.receiver = seq(1,4) # a numeric vector. 
+netVisual_aggregate(cellchat, signaling = pathways.show,  vertex.receiver = vertex.receiver)
+
+# Circle plot
+par(mfrow=c(1,1)); netVisual_aggregate(cellchat, signaling = pathways.show, layout = "circle")
+# Chord diagram (works)
+par(mfrow=c(1,1)); netVisual_aggregate(cellchat, signaling = pathways.show, layout = "chord")
+#> Note: The first link end is drawn out of sector 'Inflam. FIB'.
+
+#> # Heatmap (works)
+par(mfrow=c(1,1)); netVisual_heatmap(cellchat, signaling = pathways.show, color.heatmap = "Reds")
+#> Do heatmap based on a single object
+o=table(epim@meta.data$seurat_clusters);op=data.frame(o)[,2]
+group.cellType <-c(rep("1",op[1]),rep("2",op[2]),rep("3",op[3]),rep("4",op[4]),rep("5",op[5]),rep("6",op[6]),rep("7",op[7]),rep("8",op[8]),rep("9",op[9]),rep("10",op[10]),rep("11",op[11])) 
+# c(rep("MM", 9), rep("Ep", 3), rep("Ind", 5)) # grouping cell clusters into fibroblast, DC and TC cells
+names(group.cellType) <- levels(cellchat@idents); netVisual_chord_cell(cellchat, signaling = pathways.show, group = group.cellType, title.name = paste0(pathways.show, " signaling network")) #image
+#> Plot the aggregated cell-cell communication network at the signaling pathway level
+#> Note: The first link end is drawn out of sector 'Inflam. FIB'.
+#Compute the contribution of each ligand-receptor pair to the overall signaling pathway and visualize cell-cell communication mediated by a single ligand-receptor pair
+netAnalysis_contribution(cellchat, signaling = pathways.show) #image
+
+# We can also visualize the cell-cell communication mediated by a single ligand-receptor pair. (not work)
+pairLR.CXCL <- extractEnrichedLR(cellchat, signaling = pathways.show, geneLR.return = FALSE); LR.show <- pairLR.CXCL[1,] # show one ligand-receptor pair
+# Hierarchy plot
+vertex.receiver = seq(1,4) # a numeric vector
+netVisual_individual(cellchat, signaling = pathways.show,  pairLR.use = LR.show, vertex.receiver = vertex.receiver)
+
+# Circle plot
+netVisual_individual(cellchat, signaling = pathways.show, pairLR.use = LR.show, layout = "circle")
+# Chord diagram (ok)
+netVisual_individual(cellchat, signaling = pathways.show, pairLR.use = LR.show, layout = "chord")
+#> Note: The first link end is drawn out of sector 'Inflam. FIB'.
+
+# Access all the signaling pathways showing significant communications
+# Automatically save the plots of the all inferred network for quick exploration
+pathways.show.all <- cellchat@netP$pathways
+# check the order of cell identity to set suitable vertex.receiver
+levels(cellchat@idents)
+vertex.receiver = seq(1,4)
+ok='D:/Data for Seurat Analysis/filtered_gene_bc_matrices/Data Filtered and Processed in Seurat/E11-16_Pitx2vmeo2/Pathway_Analysis/CellChat/all pwys' #E11-16_Pitx2vmeo
+setwd(dir=ok)
+for (i in 1:length(pathways.show.all)) {
+  # Visualize communication network associated with both signaling pathway and individual L-R pairs
+  netVisual(cellchat, signaling = pathways.show.all[i], vertex.receiver = vertex.receiver, layout = "hierarchy")
+  # Compute and visualize the contribution of each ligand-receptor pair to the overall signaling pathway
+  gg <- netAnalysis_contribution(cellchat, signaling = pathways.show.all[i])
+  ggsave(filename=paste0(pathways.show.all[i], "_L-R_contribution.pdf"), plot=gg, width = 3, height = 2, units = 'in', dpi = 300)}
+
+# Visualize cell-cell communication mediated by multiple ligand-receptors or signaling pathways
+# Bubble plot# show all the significant interactions (L-R pairs) from some cell groups (defined by 'sources.use') to other cell groups (defined by 'targets.use')
+netVisual_bubble(cellchat, sources.use = 9, targets.use = c(3:8), remove.isolate = FALSE)
+#> Comparing communications on a single object
+#> # show all the significant interactions (L-R pairs) associated with certain signaling pathways
+netVisual_bubble(cellchat, sources.use = 11, targets.use = c(3:8), signaling = c("WNT","NOTCH"), remove.isolate = FALSE)
+#> Comparing communications on a single object
+
+# show all the significant interactions (L-R pairs) based on user's input (defined by `pairLR.use`)
+pairLR.use <- extractEnrichedLR(cellchat, signaling = c("WNT","NOTCH")) #"CCL","CXCL","FGF" -> pathways.show.all 
+netVisual_bubble(cellchat, sources.use = c(11), targets.use = c(3:8), pairLR.use = pairLR.use, remove.isolate = TRUE)
+#> Comparing communications on a single object
+
+# Chord diagram
+# show all the significant interactions (L-R pairs) from some cell groups (defined by 'sources.use') to other cell groups (defined by 'targets.use')
+# show all the interactions sending from Inflam.FIB
+jpeg("netVisual_chord5-all_gene.jpg", width = 12000, height = 9000, quality = 100,pointsize = 24, res=1200);
+netVisual_chord_gene(cellchat, sources.use = 9, targets.use = c(1:8,11), lab.cex = 1.5,legend.pos.y = 30);dev.off()
+
+# show all the interactions received by Inflam.DC
+netVisual_chord_gene(cellchat, sources.use = c(9), targets.use = 7, legend.pos.x = 15)
+# show all the significant interactions (L-R pairs) associated with certain signaling pathways
+netVisual_chord_gene(cellchat, sources.use = c(1,2,9,10,11), targets.use = c(3:8), signaling = c("FGF","IGF"),legend.pos.x = 8)
+#> Note: The second link end is drawn out of sector 'CXCR4 '. #> Note: The first link end is drawn out of sector 'CXCL12 '.
+#> # show all the significant signaling pathways from some cell groups (defined by 'sources.use') to other cell groups (defined by 'targets.use')
+netVisual_chord_gene(cellchat, sources.use = c(9), targets.use = c(3:8), slot.name = "netP", legend.pos.x = 10)
+#> Note: The first link end is drawn out of sector 'CXCL '.
+
+# Plot the signaling gene expression distribution using violin/dot plot
+jpeg("plotGeneExpression_wnt.jpg", width = 12000, height = 9000, quality = 100,pointsize = 24, res=1200);plotGeneExpression(cellchat, signaling = "WNT");dev.off() 
+jpeg("plotGeneExpression_wnt.jpg", width = 12000, height = 9000, quality = 100,pointsize = 24, res=1200);plotGeneExpression(cellchat, signaling = "EPHB",enriched.only = FALSE);dev.off() 
+
+# Part IV: Systems analysis of cell-cell communication network
+# Compute the network centrality scores
+cellchat <- netAnalysis_computeCentrality(cellchat, slot.name = "netP") # the slot 'netP' means the inferred intercellular communication network of signaling pathways
+# Visualize the computed centrality scores using heatmap, allowing ready identification of major signaling roles of cell groups
+netAnalysis_signalingRole_network(cellchat, signaling = pathways.show, width = 16, height = 5, font.size = 12) #works..
+netAnalysis_signalingRole_network(cellchat, width = 16, height = 5, font.size = 12) #works..
+
+#Visualize the dominant senders (sources) and receivers (targets) in a 2D space
+# Signaling role analysis on the aggregated cell-cell communication network from all signaling pathways
+gg1 <- netAnalysis_signalingRole_scatter(cellchat)
+#> Signaling role analysis on the aggregated cell-cell communication network from all signaling pathways
+# Signaling role analysis on the cell-cell communication networks of interest
+gg2 <- netAnalysis_signalingRole_scatter(cellchat, signaling = c("DESMOSOME", "PDGF"))
+#> Signaling role analysis on the cell-cell communication network from user's input
+jpeg("signalingRole_DESMOSOME&PDGF_scatter.jpg", width = 12000, height = 9000, quality = 100,pointsize = 24, res=1200);gg1 + gg2;dev.off() 
+
+#Identify signals contributing most to outgoing or incoming signaling of certain cell groups
+# Signaling role analysis on the aggregated cell-cell communication network from all signaling pathways
+ht1 <- netAnalysis_signalingRole_heatmap(cellchat, pattern = "outgoing")
+ht2 <- netAnalysis_signalingRole_heatmap(cellchat, pattern = "incoming")
+jpeg("send receive out in all clusteri.jpg", width = 12000, height = 9000, quality = 100,pointsize = 24, res=1200); ht1 + ht2;dev.off() #works: 
+#https://astrostatistics.psu.edu/su07/R/html/grDevices/html/png.html
+# Signaling role analysis on the cell-cell communication networks of interest
+ht <- netAnalysis_signalingRole_heatmap(cellchat, signaling = c("CDH", "EPHB")); ht #works
+jpeg("Out CDH and EPHB all clusters.jpg", width = 12000, height = 9000, quality = 100,pointsize = 24, res=1200); ht;dev.off() #works: 
+# Identify global communication patterns to explore how multiple cell types and signaling pathways coordinate together
+library(NMF); library(ggalluvial)
+jpeg("Cell and Comm patterns2.jpg", width = 12000, height = 9000, quality = 100,pointsize = 24, res=1200);
+selectK(cellchat, pattern = "outgoing") #takes 3-5min (!!)
+nPatterns = 3; cellchat <- identifyCommunicationPatterns(cellchat, pattern = "outgoing", k = nPatterns);dev.off() #works: 
+
+# river plot
+jpeg("River patterns.jpg", width = 12000, height = 9000, quality = 100,pointsize = 24, res=1200);netAnalysis_river(cellchat, pattern = "outgoing");dev.off() 
+#> Please make sure you have load `library(ggalluvial)` when running this function #> # dot plot
+jpeg("Dot plot outgoing patterns.jpg", width = 12000, height = 9000, quality = 100,pointsize = 24, res=1200);netAnalysis_dot(cellchat, pattern = "outgoing");dev.off() 
+# Identify and visualize incoming communication pattern of target cells
+jpeg("Incoming patterns.jpg", width = 12000, height = 9000, quality = 100,pointsize = 24, res=1200)
+selectK(cellchat, pattern = "incoming") #also takes time # Cophenetic values begin to drop when the number of incoming patterns is 4.
+nPatterns = 4; cellchat <- identifyCommunicationPatterns(cellchat, pattern = "incoming", k = nPatterns);dev.off()
+
+# river plot
+jpeg("River in patterns.jpg", width = 12000, height = 9000, quality = 100,pointsize = 24, res=1200);netAnalysis_river(cellchat, pattern = "incoming");dev.off()  #> Please make sure you have load `library(ggalluvial)` when running this function
+jpeg("Dot plot in patterns.jpg", width = 12000, height = 9000, quality = 100,pointsize = 24, res=1200);netAnalysis_dot(cellchat, pattern = "incoming");dev.off() 
+
+# Manifold and classification learning analysis of signaling networks
+# Identify signaling groups based on their functional similarity
+cellchat <- computeNetSimilarity(cellchat, type = "functional")
+cellchat <- netEmbedding(cellchat, type = "functional")#> Manifold learning of the signaling networks for a single dataset
+cellchat <- netClustering(cellchat, type = "functional")#> Classification learning of the signaling networks for a single dataset
+# Visualization in 2D-space
+jpeg("netVisual_embedding functional.jpg", width = 12000, height = 9000, quality = 100,pointsize = 24, res=1200);netVisual_embedding(cellchat, type = "functional", label.size = 3.5);dev.off()
+
+# Identify signaling groups based on structure similarity
+cellchat <- computeNetSimilarity(cellchat, type = "structural")
+cellchat <- netEmbedding(cellchat, type = "structural")#> Manifold learning of the signaling networks for a single dataset
+cellchat <- netClustering(cellchat, type = "structural")#> Classification learning of the signaling networks for a single dataset
+# Visualization in 2D-space
+jpeg("netVisual_embedding_structural.jpg", width = 12000, height = 9000, quality = 100,pointsize = 24, res=1200); netVisual_embedding(cellchat, type = "structural", label.size = 3.5);dev.off()
+jpeg("netVisual_embedding_structural_zoom.jpg", width = 12000, height = 9000, quality = 100,pointsize = 24, res=1200);netVisual_embeddingZoomIn(cellchat, type = "structural", nCol = 2);dev.off()
+# Part V: Save the CellChat object
+saveRDS(cellchat, file = "cellchat_micescRNAseq.rds")
+# cellchat <- readRDS("cellchat_micescRNAseq.rds")
+
+# Scenic Analysis!
+# Hyvä alkaa tästä, mutta kestää normi /hyvällä/ koneella 10h (tai enemmän) ajaa, eli yliyön (jätä kone päälle):
+# https://raw.githubusercontent.com/aertslab/SCENIC/master/vignettes/SCENIC_Running.Rmd
+# Required packages:
+# http://htmlpreview.github.io/?https://github.com/aertslab/SCENIC/blob/master/inst/doc/SCENIC_Running.html
+library(SCopeLoomR); library(AUCell);library(SCENIC);library(GENIE3);library('xgboost');library(KernSmooth);library(RColorBrewer)
+library(plotly);library(BiocParallel);library(grid);library(ComplexHeatmap);library(data.table);library(doSNOW);library(doParallel);library(Rmpi);library(doMPI)
+gc(); memory.limit(9999999999999) #you need to add this before loading
+epj=epim # or load("My_Object4.RData")
+#This should have been clearer in the instructions: http://htmlpreview.github.io/?https://github.com/aertslab/SCENIC/blob/master/inst/doc/SCENIC_Setup.html
+build_loom(file.name = "281122_Epit.loom",dgem = epj@assays$RNA@counts, #this works
+           title = "Epit_in_E11.5_and_E14.25",default.embedding = Embeddings(object = epj, reduction = "umap"),default.embedding.name = "umap")
+loom <- open_loom("281122_Epit.loom", mode = "r+")
+add_embedding(loom = loom,embedding = Embeddings(object = epj, reduction = "pca"),name = "pca")
+add_col_attr(loom = loom, key = "percent.mito",value = epj@meta.data$percent.mt, as.metric = TRUE)
+### Co-expression network
+exprMat <- get_dgem(loom); cellInfo <- get_cell_annotation(loom)
+scenicOptions <- initializeScenic(org="mgi", dbDir="D:/Data for Seurat Analysis/filtered_gene_bc_matrices/Data Filtered and Processed in Seurat/cisTarget_databases",nCores=7) #nCores at least four
+saveRDS(scenicOptions, file="scenicOptions.Rds")
+genesKept <- geneFiltering(exprMat, scenicOptions)
+exprMat_filtered <- exprMat[genesKept, ]
+#Time consuming: 15:38-(about)15:58 / 11:41-11:47 (6min)
+runCorrelation(exprMat_filtered, scenicOptions)
+exprMat_filtered_log <- log2(exprMat_filtered+1) # ff(exprMat_filtered_log, 1, c(10,10))
+set.seed(123) #Time consuming: aloitettu 16:03-?overnight? , no nyt alkanee toimia... (muista olla loggautumatta/sulkematta konetta... sulje vaan näyttö)
+gc(); memory.limit(9999999999999); memory.size(max = FALSE)
+oho=runGenie3(exprMat_filtered_log, scenicOptions) #Still, it has lasted more than 3.5 hours... or so... check the folder if it did it or not.. it may just shut down
+# even if it did it... started again 22.9.22 at 9:27 with 6 cores...
+saveRDS(scenicOptions, file="scenicOptions.Rds"); save.image(file = "Epit_Scene.RData"); head(cellInfo) # -> nGene  nUMI percent.mito TGGTTAGAGAGAGCAA_1  5163 18838     1.301894
+cellInfo <- data.frame(cellInfo); cbind(table(cellInfo$CellType)); dir.create("int")
+saveRDS(cellInfo, file="int/cellInfo.Rds"); gc(); memory.limit(9999999999999)
+scenicOptions@settings$dbs <- scenicOptions@settings$dbs["10kb"] # Toy run settings
+scenicOptions <- runSCENIC_1_coexNetwork2modules(scenicOptions) #Ok so far..but takes hours (if started 17:00):
+# 03:16	Creating TF modules Number of links between TFs and targets (weight>=0.001): 2556600 [,1] nTFs          862 nTargets     8559 nGeneSets    6321 nLinks    3678088
+gc(); memory.limit(9999999999999);
+saveRDS(scenicOptions, file="scenicOptions3.Rds")
+#save.image(file = "My_ObjectScene.RData")
+gc(); memory.limit(9999999999999)
+scenicOptions@settings$nCores <- 1 #This is needed for the next function, https://github.com/aertslab/SCENIC/issues/179
+scenicOptions <- runSCENIC_2_createRegulons(scenicOptions, coexMethod=c("top5perTarget")) # Toy run settings; This takes less than 15min when previous ok, yielding:
+# 03:17	Step 2. Identifying regulons Using the column 'features' as feature index for the ranking database. tfModulesSummary:[,1] top5perTarget  152 03:17	RcisTarget: Calculating AUC
+# Using the column 'features' as feature index for the ranking database. Scoring database:  [Source file: mm9-tss-centered-10kb-7species.mc9nr.feather] 03:21	RcisTarget: Adding motif annotation Using BiocParallel...
+# Number of motifs in the initial enrichment: 35400 Number of motifs annotated to the matching TF: 734 03:23	RcisTarget: Pruning targets Using the column 'features' as feature index for the ranking database. [1] 22058
+# 03:31	Number of motifs that support the regulons: 734 [WARNING] Deprecated: --self-contained. use --embed-resources --standalone Preview of motif enrichment saved as: output/Step2_MotifEnrichment_preview.html
+gc(); memory.limit(9999999999999); #save.image(file = "My_ObjectScene.RData")
+saveRDS(scenicOptions, file="scenicOptions.Rds")
+gc(); memory.limit(9999999999999);#save.image(file = "My_ObjectScene2.RData");
+scenicOptions <- runSCENIC_3_scoreCells(scenicOptions, exprMat_filtered_log) #Ok, but takes hours:
+# 03:31	Step 3. Analyzing the network activity in each individual cell Number of regulons to evaluate on cells: 32
+# Biggest (non-extended) regulons: Lef1 (78g) Sox11 (44g) Jun (37g) Jund (30g) Atf3 (29g) Tead1 (22g) Egr1 (18g) Junb (18g); Fos (13g)
+# Quantiles for the number of genes detected by cell:  (Non-detected genes are shuffled at the end of the ranking. Keep it in mind when choosing the threshold for calculating the AUC).
+# min   1%   5%  10%  50% 100% 
+# 271  288  331  408 1509 5234 # Warning in .AUCell_calcAUC(geneSets = geneSets, rankings = rankings, nCores = nCores,  :Using only the first 288 genes (aucMaxRank) to calculate the AUC.
+# 03:34	Finished running AUCell. 03:34	Plotting heatmap...Registered S3 methods overwritten by 'registry': method from  print.registry_field proxy print.registry_entry proxy 03:34	Plotting t-SNEs...
+gc(); memory.limit(9999999999999)
+saveRDS(scenicOptions, file="scenicOptions.Rds")
+save.image(file = "Epit_Scene.RData")
+gc(); memory.limit(9999999999999)
+scenicOptions <- runSCENIC_4_aucell_binarize(scenicOptions) 
+#231122, ok # # Binary regulon activity: 25 TF regulons x 3815 cells. # (32 regulons including 'extended' versions) # 24 regulons are active in more than 1% (38.15) cells.
+gc(); memory.limit(9999999999999)
+saveRDS(scenicOptions, file="scenicOptions3.Rds")#save.image(file = "My_ObjectScene.RData")
+tsneAUC(scenicOptions, aucType="AUC") # choose settings
+gc(); memory.limit(9999999999999)
+saveRDS(scenicOptions, file="scenicOptions.Rds")
+save.image(file = "Epit_Scene.RData")
+gc(); memory.limit(9999999999999)
+### Exploring output 
+# Check files in folder 'output' in your work folder, e.g. D:\Data for Seurat Analysis\filtered_gene_bc_matrices\Data Filtered and Processed in Seurat\e16_amap\output
+# Browse the output .loom file @ http://scope.aertslab.org
+# output/Step2_MotifEnrichment_preview.html in detail/subset:
+motifEnrichment_selfMotifs_wGenes <- loadInt(scenicOptions, "motifEnrichment_selfMotifs_wGenes") #Cepbpb had 'highest' (all were rel. low) AUC:
+tableSubset <- motifEnrichment_selfMotifs_wGenes[highlightedTFs=="Cebpb"] #https://pubmed.ncbi.nlm.nih.gov/29581460/
+viewMotifs(tableSubset) #Now there is info at least
+# output/Step2_regulonTargetsInfo.tsv in detail: 
+regulonTargetsInfo <- loadInt(scenicOptions, "regulonTargetsInfo")
+tableSubset <- regulonTargetsInfo[TF=="Cebpb" & highConfAnnot==TRUE]
+viewMotifs(tableSubset) #Now there is info at least
+cellInfo$CellType = c('epithelia', 'epithelia2')
+colVars <- list(CellType=c("epithelia"="forestgreen","epithelia2"="forestgreen"))
+colVars$CellType <- colVars$CellType[intersect(names(colVars$CellType), cellInfo$CellType)]
+saveRDS(colVars, file="int/colVars.Rds")
+#These are all together, :)
+plot.new(); legend(0,1, fill=colVars$CellType, legend=names(colVars$CellType))
+# Cell-type specific regulators (RSS): 
+regulonAUC <- loadInt(scenicOptions, "aucell_regulonAUC")
+rss <- calcRSS(AUC=getAUC(regulonAUC), cellAnnotation=cellInfo[colnames(regulonAUC),"CellType" ] ) #
+rssPlot <- plotRSS(rss)
+plotly::ggplotly(rssPlot$plot)
+head(rssPlot$plot$data$cellType)
+x=rssPlot$plot$data$RSS
+y=rssPlot$plot$data$Z #plot(x,y)
