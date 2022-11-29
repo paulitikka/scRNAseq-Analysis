@@ -804,12 +804,12 @@ cds_from_edt3@clusters@listData[["UMAP"]][["partitions"]] <- recreate.partition
 list_cluster <- epim@meta.data[[sprintf("seurat_clusters")]]# epim@meta.data[[sprintf("ClusterNames_%s_%sPC", cluster.res, nPC)]]
 names(list_cluster) <- epim@assays[["RNA"]]@data@Dimnames[[2]]
 cds_from_edt3@clusters@listData[["UMAP"]][["clusters"]] <- list_cluster
-cds_from_edt3@clusters@listData[["UMAP"]][["louvain_res"]] <- "NA"
+cds_from_edt3@clusters@listData[["UMAP"]][["louvain_res"]] <- "NA"# cds_from_edt3@reduce_dim_aux$gene_loadings <- epim@reductions[["pca"]]@feature.loadings
 cds_from_edt3@int_colData@listData$reducedDims$UMAP =  epim@reductions[["umap"]]@cell.embeddings
-# cds_from_edt3@reduce_dim_aux$gene_loadings <- epim@reductions[["pca"]]@feature.loadings
+cds_from_edt3=preprocess_cds(cds_from_edt3) #This is needed for the DE plots later(!)
 cds_from_edt3 <- learn_graph(cds_from_edt3, use_partition = TRUE)
 cds_from_edt3 <- order_cells(cds_from_edt3)#Select Mesenchymal cells points in the middle and epithelial otherwise (in the surface) # plot trajectories colored by pseudotime
-jpeg("Monocle_pseudotime.jpg", width = 12000, height = 9000, quality = 100,pointsize = 16, res=1200);
+jpeg("Monocle_pseudotime2.jpg", width = 12000, height = 9000, quality = 100,pointsize = 16, res=1200);
 plot_cells(cds= cds_from_edt3,color_cells_by = "pseudotime",show_trajectory_graph = TRUE);dev.off() 
 #In case you want to change the luster numbers after knowing the approximate pseudotime development:
 # cal=c('1', "2", "3",'4','5','6','7','8','9','10','11','12') #It should be around 5, since cluster 8 and 1 are oddish.. ,'9','10','11',"12","13","14",'15','16'
