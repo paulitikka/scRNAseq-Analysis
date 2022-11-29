@@ -1214,6 +1214,23 @@ sum(top_specific_marker_ids %in% 'Shh') # 'Sox2? and Pitx2? because they are all
 gc(); memory.limit(9999999999999) # https://cole-trapnell-lab.github.io/garnett/docs_m3/#installing-garnett
 write.csv(top_specific_marker_ids, file = "Epim_top5_Monocle3 Markers_v2_291122.csv")
 
+DE_genes=read.csv("de_genes.csv", header = FALSE) #differentially expressed genes in clusters top 20% or all if small numbers like less than 50 in a cluster
+the_genes=unique(unlist(DE_genes)); length(the_genes)
+speed_genes=read.csv("probability of cell reaching terminal with the gene_dynamical_tikka281122.csv", header = TRUE)
+
+Genes_List=function(speed_genes,cor='X4_corr') { 
+  cond=rev(order(speed_genes[,cor]))
+  speed_genes2=speed_genes[cond,c('features',cor)]
+  cond2=speed_genes2[,cor] >= 0
+  speed_genes3=speed_genes2[cond2,] # hist(pitx2_genes3[,'X3_corr'])
+  cond3=speed_genes3[,cor] >= mean(speed_genes3[,cor])
+  speed_genes4=speed_genes3[cond3,]
+  jou=speed_genes4[,'features']
+return(jou)}
+c4=Genes_List(speed_genes,'X4_corr')
+c6=Genes_List(speed_genes,'X6_corr')
+c11=Genes_List(speed_genes,'X11_corr')
+good_ones=Reduce(intersect, list(the_genes,top_specific_marker_ids,c4));length(good_ones)
 
 #%% Monocle2: http://cole-trapnell-lab.github.io/monocle-release/docs_mobile/
 # BiocManager::install('monocle')
