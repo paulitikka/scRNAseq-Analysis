@@ -1139,6 +1139,82 @@ for cluster in range(len(hu)): #10 is for clusters and the below ':5' or any num
 print(adata.var['velocity_genes'].sum(), adata.n_vars) #top_genes = adata.var_names[adata.var.fit_likelihood.argsort()[::-1]]
 cr.pl.cluster_fates(adata, mode="heatmap",save='clusters_to_terminals heatmap_tikka'+date+'.png')
 
+# Before running MDS, we first calculate a distance matrix between all pairs of cells.  Here we
+# use a simple euclidean distance metric on all genes, using scale.data as input
+#This is slow somehow, at least 30min..: ...
+require(graphics)
+DefaultAssay( epim) <- "SCT"
+a=t(GetAssayData(epim, slot = "scale.data"))
+# b=GetAssayData(data)
+d <- dist(a)
+dist.euclidean <- parDist(a, method = "euclidean") #This takes time... like 15m(?)
+d=dist.euclidean
+# Run the MDS procedure, k determines the number of dimensions
+mds <- cmdscale(d = d, k = 2)# = d, k = 2) s10:58-11:05
+# cmdscale returns the cell embeddings, we first label the columns to ensure downstream consistency
+colnames(mds) <- paste0("MDS_", 1:2) #We will now store this as a custom dimensional reduction called 'mds'
+data[["mds"]] <- CreateDimReducObject(embeddings = mds, key = "MDS_", assay = DefaultAssay(data))
+# We can now use this as you would any other dimensional reduction in all downstream functions
+DimPlot(data, reduction = "mds", pt.size = 0.5) #With this one can spot if any of the clusters is clearly different thatn resto of the clusters, and it seemst that 5 is
+ggsave2("plot_clusters_mds_291122.png",device="png")
+
+#Pseudoilu jatkuu # trace('calculateLW', edit = T, where = asNamespace("monocle3"))
+ciliated_cds_pr_test_res2 <- graph_test(cds_from_edt3, neighbor_graph="principal_graph", cores=8) #If you have a pseudotime) image, do not (!) enlarge it during calculation, k = 1000
+save(ciliated_cds_pr_test_res2,file="cds_epim2.Rdata")
+pr_deg_ids2 <- row.names(subset(ciliated_cds_pr_test_res2, q_value < 0.05))# AFD_genes <- c("Krt14","Epcam","Cdh5","Ccl12","Smpd3","Chchd10","Dsp","Fcer1g","Vim")
+AFD_genes2 <- c("Sox2") #"Pitx2","Sox2",
+AFD_lineage_cds2 <- cds_from_edt3[row.names(ciliated_cds_pr_test_res2) %in% AFD_genes2, ] #Check clusters.. colData(cds_from_edt3)$seurat_clusters %in% c(1,2,3,4,5,6,7,8)
+plot_genes_in_pseudotime(AFD_lineage_cds2, color_cells_by="pseudotime", min_expr=0.01,label_by_short_name=FALSE)
+
+gene_module_df2 <- find_gene_modules(cds_from_edt3[pr_deg_ids2,],resolution=c(10^seq(-7,-1))) #0,10^seq(-7,-1), check later..c(0.1) you also need to have monocle3 prefilter in above
+
+cell_group_df2 <- tibble::tibble(cell=row.names(colData(cds_from_edt3)),cell_group=epim[[]][,'seurat_clusters'])
+agg_mat2 <- aggregate_gene_expression(cds_from_edt3, gene_module_df2, cell_group_df2)
+row.names(agg_mat2) <- stringr::str_c("Module ", row.names(agg_mat2))
+Out=pheatmap::pheatmap(agg_mat2,scale="column", clustering_method="ward.D2")
+# https://raw.githubusercontent.com/ucdavis-bioinformatics-training/2020-August-Advanced-scRNAseq/master/data_analysis/adv_scrnaseq_monocle.Rmd
+plot_cells(cds_from_edt3,genes=gene_module_df2 %>% filter(module %in% c(20,15)),label_cell_groups=FALSE,show_trajectory_graph=FALSE)
+# +xlim(2,6)+ylim(-3,2) #1,5,9,13,3,7,10
+mat2=gene_module_df2 %>% filter(module %in% c(15)) # gene_module_df2[which(gene_module_df2[,'id']=='Sox2'),] #1,2,3,5,7,9,10,13 , 6
+#Module 11 for cluster 7 which is sox2 endpoint (epim) in umap and it reveals midkine trend.. in all clusters! https://bite-it.helsinki.fi/MKPROT.HTM https://bite-it.helsinki.fi/MKRNA.HTM
+mat2[order(mat2[,4], decreasing = TRUE),] #Was there minus values?
+mat2[order(mat2[,5], decreasing = TRUE),] #which(mat2[,'id']=='Sox2') #mat2[which(mat2[,'id']=='Sox2'),]
+gok=unlist(mat2[,'id']) #Idents(edt4)=edt4[[]][,'seurat_clusters'] #you may need to change the idents to clusters...
+p1_avg=AverageExpression(object = epim)
+inter=c('Pitx2','Sox2','Shh','Foxi3','Krt14', 'Epcam')
+ce=names(table(epim$seurat_clusters))#c('1','2','3','4','5','6','7','8','9','10','11','12','13'); jang=c() #3,4,8,9,'10','11','12','13','14'
+for(i in 1:length(gok)) {jang=append(jang,list(p1_avg$SCT[which(rownames(p1_avg$SCT) %in% gok[i]),][ce]))} #Bigger first in 'which', and check your assays!
+jang=data.frame(jang); colnames(jang)=gok; jang=t(jang); jang=data.frame(na.omit(jang))
+write.csv(jang, file = "c6_trend15_genes_sox2_ok_291122.csv") #nn
+#%%
+#Check the cluster names:
+colData(cds_from_edt3)[,3]=epim[[]][,'seurat_clusters']
+names(colData(cds_from_edt3))=c("barcode","Size_Factor", "Clusters")
+#Check reference cells number, should be smallest cluster: table(Idents(epim)):
+auxa=round_any(median(table(Idents(epim))),100,f=ceiling) #sum(top_specific_marker_ids %in% 'Mdk')
+# auxa2=round_any((median(table(epim$seurat_clusters))+dim(epim)[2]/length(unique(epim$seurat_clusters)))/2,100,f=ceiling)
+
+marker_test_res <- top_markers(cds_from_edt3, group_cells_by="Clusters", reference_cells=auxa, cores=1)
+#xxxx is the amount of all cells so ref cells less than that or the min cluster size, which is probably too low here if the median is about 500 and the example 1000 with a lot of clusters...
+top_specific_markers <- marker_test_res %>%
+  filter(fraction_expressing >= 0.01) %>%
+  group_by(cell_group) %>%
+  top_n(8, pseudo_R2) #https://cole-trapnell-lab.github.io/monocle3/docs/clustering/
+#Test also Garnet...
+top_specific_marker_ids <- unique(top_specific_markers %>% pull(gene_id))
+# Plotting made hard.. due different plot function names between monocle and ggplot, but still work similarly
+#https://stackoverflow.com/questions/13297995/changing-font-size-and-direction-of-axes-text-in-ggplot2
+plot_genes_by_group(cds_from_edt3,top_specific_marker_ids,group_cells_by="Clusters",axis_order = c("group_marker"),ordering_type=c("none"),max.size=5)
+                    # axis_order = c("group_marker"),
+                    # ordering_type="maximal_on_diag",max.size=3)+theme(text = element_text(size=15)) #marker_group
+# ggplot(iris, aes(x = factor(Species, level = c('virginica', 'versicolor', 'setosa')), y = Petal.Width))
+sum(top_specific_marker_ids %in% 'Sox2')
+sum(top_specific_marker_ids %in% 'Pitx2')
+sum(top_specific_marker_ids %in% 'Shh') # 'Sox2? and Pitx2? because they are all over! :) Change the cluster order...
+gc(); memory.limit(9999999999999) # https://cole-trapnell-lab.github.io/garnett/docs_m3/#installing-garnett
+write.csv(top_specific_marker_ids, file = "Epim_top5_Monocle3 Markers_v2_291122.csv")
+
+
 #%% Monocle2: http://cole-trapnell-lab.github.io/monocle-release/docs_mobile/
 # BiocManager::install('monocle')
 library(Seurat);
