@@ -884,6 +884,261 @@ maht=new_unique(c("runspliced",name), ".csv", ask=FALSE);write.csv(us ,file = ma
 write.csv(colData(txist)$clusters, file = 'clustersokna.csv',row.names = TRUE)  
 write.csv(my_color_palette ,file = 'clustersokna2.csv',row.names = TRUE) 
 
+#This RNAvelocity pipeline is done in python:
+import scanpy as sc #Install may need the restart of both anaconda and this spyder prompt
+#https://github.com/theislab/scanpy/issues/454 #Because of this issue in the... I lost one or two afternoons... :( well.. now that I found it, it is ok :)
+#https://scottontechnology.com/solved-is-not-a-supported-wheel-on-this-platform/
+#https://smorabit.github.io/tutorials/4velocyto/
+import sys
+import h5py   
+import numpy as np
+import matplotlib.pyplot as plt #This many not drive..
+import anndata
+import scvelo as scv #Install the most recent one..
+import matplotlib as plt
+import pandas as pd
+import os
+import loompy
+import multiprocessing
+from multiprocessing import Process
+import time 
+import cellrank as cr
+import pip_search 
+import matplotlib.pyplot as plt
+import leiden
+import igraph
+from matplotlib.ticker import (AutoMinorLocator, MultipleLocator)
+os.chdir(path='D:/Data for Seurat Analysis/filtered_gene_bc_matrices/Data Filtered and Processed in Seurat/lapimeno/Epit_SCT') #https://stackoverflow.com/questions/25250998/how-do-i-run-two-separate-instances-of-spyder
+adata = sc.read_h5ad("pbmc4k.h5ad")
+rspliced = pd.read_csv("rsplicedokna.csv") #This is a big file
+runspliced=pd.read_csv("runsplicedokna.csv") #This is a big file, if you take all the genes, perhaps run separately
+rspliced=rspliced.set_index('Unnamed: 0')
+rspliced.index.name = "CellID"
+runspliced=runspliced.set_index('Unnamed: 0')
+runspliced.index.name = "CellID"
+adata.layers['spliced']=rspliced
+adata.layers['unspliced']=runspliced #takes 10s..
+clusters=pd.read_csv("clustersokna.csv") #this was 7155, others 7133, why? (9222) or clusters_okny1, clustersokna
+clusters.index=rspliced.index
+clusters=clusters.iloc[:,1]
+adata.obs['clusters']=clusters
+scv.settings.verbosity = 3  # show errors(0), warnings(1), info(2), hints(3)
+scv.settings.presenter_view = True  # set max width size for presenter view
+scv.set_figure_params('scvelo')
+adata.var.index=adata.var['features']
+adata.obs.index.name='cells'
+adata.var.index.name='features'
+ee=pd.read_csv("clustersokna2.csv") 
+adata.uns['clusters_colors']=np.array(ee.iloc[:,1])
+print(np.where(adata.var.index=='Shh')) #Likewise: (array([8]),) 281122
+print(np.where(adata.var.index=='Sox2'))
+# pois= [6,7,8,10]#[2,3,4,5,6,7,8,9,10,8,12]# Check your clusters, for Sox2 lineage you need: 3,7,8,10,8,12,13,14,15], and shh: pois=[7,8,9,13,14,15].. EKs: 2,3...
+# for i in range(len(pois)): 
+    # adata=adata[pd.DataFrame(adata.obs['clusters']).iloc[:,0]!=pois[i]] 
+# adata=adata[np.array(pd.DataFrame(adata.obsm['X_umap']).iloc[:,0] < 5.5)] #) #check this..
+x = pd.DataFrame(adata.obsm['X_umap']).iloc[:,0]; y = pd.DataFrame(adata.obsm['X_umap']).iloc[:,1]
+fig, ax = plt.subplots();ax.axhline(y=0, color='k');ax.axvline(x=0, color='k');ax.set_aspect('equal');ax.grid(True, which='both')
+# Set axis ranges; by default this will put major ticks every 25.
+ax.set_xlim(-12, 8)
+ax.set_ylim(-8, 8)
+# Change major ticks to show every 20.
+ax.xaxis.set_major_locator(MultipleLocator(1))
+ax.yaxis.set_major_locator(MultipleLocator(1))
+ax.plot(x,y);#ax.draw(); #plt.axis([0,6,0,6])
+plt.savefig('Start blunt_ptt281122.png')
+#%Everything before the calculations
+adata.__dict__['_raw'].__dict__['_var'] = adata.__dict__['_raw'].__dict__['_var'].rename(columns={'_index': 'features'}); 
+del(adata.raw); #del(adata.var['_index'])#this last part was essential, also due: https://github.com/theislab/scvelo/issues/508
+import scvelo as scv
+import scanpy as sc
+import cellrank as cr
+import numpy as np
+import sklearn
+scv.settings.verbosity = 3
+scv.settings.set_figure_params("scvelo")
+cr.settings.verbosity = 2
+import warnings
+warnings.simplefilter("ignore", category=UserWarning)
+warnings.simplefilter("ignore", category=FutureWarning)
+warnings.simplefilter("ignore", category=DeprecationWarning)
+adata.var.index=adata.var['features']
+msc=round(np.shape(adata)[0]*0.022,0) #Was 1 then to 1.5 and now 1.75, one would want to have 600-800 genes, 1-3% is ok.. smaller msc, the more genes, iterate so that you get both ssh and sox2
+scv.pp.filter_genes(adata, min_shared_counts=msc) # see below: 0.0025*6220 ~> 16; in the literature it is 20: or 0.0025*4695~12.. if there are less than 800 genes, do not change...
+sc.pp.neighbors(adata, n_pcs=20, n_neighbors=45) #standard: 15 and 40, perhaps close to your epin number z.. witch was 16
+scv.pp.moments(adata, n_pcs=None, n_neighbors=None) 
+print(np.where(adata.var.index=='Nphs1'))
+print(np.where(adata.var.index=='Shh')) #Likewise: (array([8]),) 281122
+print(np.where(adata.var.index=='Sox2')) #Have it: 58/62/66 :) https://github.com/theislab/scvelo/discussions/947
+#%%
+date='281122'
+tt='4065c_1388g_solution'+date+'.h5ad'
+adata.write_h5ad(tt) #1847 -> 689
+#%%
+# adata = sc.read_h5ad(tt) #https://github.com/theislab/cellrank/issues/797
+#% #erikseen.. copy-pastena allaoleva!!
+os.chdir(path='D:/Data for Seurat Analysis/filtered_gene_bc_matrices/Data Filtered and Processed in Seurat/lapimeno/Epit_SCT') 
+scv.tl.recover_dynamics(adata, n_jobs=8) #erikseen.. (!!) takes around 4 m: 15:15-18 if more than 10000 genes and 2000 cells
+scv.tl.velocity(adata, mode="dynamical");dyn='dynamical' #dynamical stochastic, if stochastic is not working:https://github.com/theislab/scvelo/issues/874 or use numpy 1.20.3
+scv.tl.velocity_graph(adata) #https://github.com/theislab/scvelo/discussions/657
+#erikseen the first three.. if slow
+date='281122'; 
+scv.pl.velocity_embedding_stream(adata, basis="X_umap", legend_fontsize=12, title="", smooth=0.8, min_mass=4, save=dyn+'_'+'tikka'+date+'.png')
+cells=round(np.shape(adata)[1]*0.05,0) 
+if cells > 50: cells=50 #https://cellrank.readthedocs.io/en/stable/auto_examples/plotting/plot_terminal_states.html#sphx-glr-auto-examples-plotting-plot-terminal-states-py
+#This can be redriven
+cr.tl.terminal_states(adata, cluster_key="clusters",weight_connectivities=0.2, n_states=6,  n_cells=cells, softmax_scale=4,show_progress_bar=False) #n_cells = n_tot*5%
+#Last time this was like 8min with more cells (15000).. now starting 15:14-17, but worked! :)
+cr.pl.terminal_states(adata, save='term_states_'+'tikka'+date+'.png')
+cr.tl.initial_states(adata,cluster_key="clusters",n_cells=msc*2,softmax_scale=4,n_states=4,show_progress_bar=False)  #17:17 
+cr.pl.initial_states(adata, discrete=True,save='init.ok.a_states_'+'tikka'+date+'.png') 
+cr.tl.lineages(adata) #https://cellrank.readthedocs.io/en/stable/api/cellrank.tl.lineages.html; the probability is computed that cell i is either going to terminal state j (backward=False) or..
+cr.pl.lineages(adata, same_plot=False,save='lineagesa_'+'tikka'+date+'.png')
+cr.pl.lineages(adata, same_plot=True,save='lineages_same_'+'tikka'+date+'.png')
+scv.tl.recover_latent_time(adata, root_key="initial_states_probs", end_key="terminal_states_probs" )
+scv.tl.paga(adata,groups="clusters",root_key="initial_states_probs",end_key="terminal_states_probs",use_time_prior="velocity_pseudotime")
+cr.pl.cluster_fates( adata,mode="paga_pie",cluster_key="clusters",basis="umap", #Needs to be umap, not X_umap..
+    legend_kwargs={"loc": "top right out"},legend_loc="top left out",node_size_scale=5, edge_width_scale=1, max_edge_width=4,
+    title="directed PAGA" ,save='cluster fates_tikka281122_v1.png')
+cr.tl.lineage_drivers(adata) #If you know the lineages and the initial state you can drive the very bellow until line
+model = cr.ul.models.GAM(adata, link='identity') 
+hii=list(adata.obs["initial_states"].cat.categories)[0]
+root_idx = np.where(adata.obs["initial_states"] == hii)[0][0] #initial state 1 had closer to 1 with 10th value
+adata.uns["iroot"] = root_idx
+sc.tl.dpt(adata)
+scv.pl.scatter(adata,color=["clusters", root_idx, "latent_time", "dpt_pseudotime"],fontsize=15, cmap="viridis", perc=[2, 98], colorbar=True, rescale_color=[0, 1],
+    title=["clusters", "root cell", "latent time", "dpt pseudotime"], ncols=2,save='exp_trends_'+'tikka'+date+'.png')
+hu=list(adata.obs["terminal_states"].cat.categories)
+for i in range(len(hu)):
+    cr.pl.lineage_drivers(adata, lineage=hu[i], n_genes=12, save='lin'+hu[i]+'_driv_genese'+date+'.png')    
+cr.pl.circular_projection(adata, keys=['clusters'], legend_loc='right', figsize=(40, 40), title='', normalize_by_mean=True, s=70, save= "circ_clusters.png" )
+dfaa=adata.varm['terminal_lineage_drivers'] #https://cellrank.readthedocs.io/en/stable/api/cellrank.tl.lineages.html
+dfaa.to_csv(r'probability of cell reaching terminal with the gene_'+dyn+'_tikka'+date+'.csv')
+cr.pl.cluster_fates(adata, mode="paga_pie", basis="umap", cluster_key="clusters", save='paga_pie.jpg')
+top_genes = adata.var['fit_likelihood'].sort_values(ascending=False).index
+#np.where(adata.var.index=='Msx1') #Sox is there_ (array([-]),) 281122
+print(np.where(adata.var.index=='Nphs1'))
+print(np.where(adata.var.index=='Shh')) #Likewise: (array([8]),) 281122
+print(np.where(adata.var.index=='Sox2')) #Have it: 58/62/66 :) https://github.com/theislab/scvelo/discussions/947
+#%% Fast calculus first
+the_genes=['Sox2', 'Shh'] #Check these... 'Krt14', 'Sox2',  # ['Msx1', 'Vim', 'Fn1', 'Epcam','Cdh5' ] #np.where(adata.var.index=='Sfrp5')
+scv.pl.scatter(adata, x='latent_time', y=top_genes[:8], frameon=True,save='fit latente genes_'+'tikka'+date+'.png', use_raw=False)
+scv.pl.scatter(adata, x='latent_time', y=the_genes, frameon=True,save='the genes_'+'tikka'+date+'.png', use_raw=False) #Stated to insert 'use_raw' false: https://github.com/theislab/scvelo/issues/508
+var_names = ['Sox2']; scv.pl.scatter(adata, x='latent_time', y=var_names, frameon=True, save=var_names[0]+'etc. latent and spliced'+'tikka'+date+'.png', use_raw=False)
+#% Basic calculations:
+l=adata.varm['terminal_lineage_drivers'].columns.values; l2 = l[::5]    
+for i in range(len(hu)):
+    scv.pl.scatter(adata, x='latent_time', y=list(adata.varm['terminal_lineage_drivers'][l2[i]].sort_values(ascending=False).index[:20][:8]),
+               figsize=(50, 25),frameon=True,save='lineage'+hu[i]+'drivers'+'tikka'+date+'.png') #'lineage'+hu[i]+'drivers'+'tikka'+date+'.png'
+
+scv.pl.velocity_embedding_stream(adata, basis='X_umap', save='velo_umap_tikka281122_ok.png') #:) Works 16.8.21 .. if it works, it is fast..
+scv.pl.velocity_embedding(adata, arrow_length=5, arrow_size=2, dpi=1020, save='velo_arrow_'+'tikka'+date+'.png')
+scv.pl.scatter(adata, 'Sox2', color=['clusters', 'velocity'], save='Sox2_clust and vel_t281122.png') #add_outline='Hei hou',  #adata.var.index
+scv.pl.proportions(adata, save='prop_'+'tikka'+date+'.png') #Not working.. same error is found here:
+scv.tl.rank_velocity_genes(adata, groupby='clusters', min_corr=.3)
+#% https://github.com/rajewsky-lab/planarian_lineages/issues/2
+dfe = scv.DataFrame(adata.uns['rank_velocity_genes']['names']); dfe.head() #plt.hist(scv.DataFrame(adata.uns['rank_velocity_genes']['scores']),20)
+dfe.to_csv('velocity_genes_tikka281122.csv'); stra='';hek=stra.join(the_genes) #https://scvelo.readthedocs.io/scvelo.tl.rank_velocity_genes/ 
+# to find genes in a cluster that show dynamics that is transcriptionally regulated differently compared to all
+#%Continuing with the pipeline
+scv.pl.velocity(adata, the_genes[0:2], ncols=2, add_outline=True, save=hek[0:9]+'tikka'+date+'.png')
+#%Speed and coherence:
+scv.tl.velocity_confidence(adata); keys = 'velocity_length', 'velocity_confidence'
+scv.pl.scatter(adata, c=keys, cmap='coolwarm', perc=[5, 95],save='len_conf_'+'tikka'+date+'.png') 
+# These provide insights where cells differentiate at a slower/faster pace, and where the direction is un-/determined. (from scvelo manual)
+df2 = adata.obs.groupby('clusters')[keys].mean().T
+df2.style.background_gradient(cmap='coolwarm', axis=1)#save='clustval1.png' #%Pseudotime: FYI: if not working some installation restart spyder!! e.g. with pandas...
+scv.pl.velocity_graph(adata, threshold=.1,save='pseudo'+'tikka'+date+'.png')
+#% Here must be umap not X_umap
+x, y = scv.utils.get_cell_transitions(adata, basis='umap', starting_cell=70) #how to select the least or most Krt8/sox expressing cell?
+ax = scv.pl.velocity_graph(adata, c='lightgrey', edge_width=.05, show=False)
+ax = scv.pl.scatter(adata, x=x, y=y, s=120, c='ascending', cmap='gnuplot', ax=ax, save='pseudo281122.png'); 
+scv.pl.scatter(adata, x='latent_time', y=the_genes, frameon=True,save=hek+'tikka'+date+'.png')
+
+scv.pl.scatter(adata, basis=adata.uns['rank_velocity_genes']['names']['3'][:3])
+kwargs = {'fontsize': 18, 'size': 80, 'title': '',
+          'legend_loc': 'none', 'colorbar': False, 'frameon': False}
+basis = the_genes[0]
+dm = scv.tl.recover_dynamics(adata, var_names='Sox2')
+ax = dm.plot_state_likelihoods(var_scale=None, dpi=120)
+dm = scv.tl.recover_dynamics(adata, var_names='Sox2')
+dm.plot_profiles(fontsize=14, dpi=120)
+#%%you can see if you drive above if you have all ok, i.e. right arrow directions.. then check belows..
+# https://cellrank.readthedocs.io/en/stable/auto_examples/plotting/plot_cluster_lineage.html#sphx-glr-auto-examples-plotting-plot-cluster-lineage-py
+#Sulla on jo clusterit joten tää ei ehkä tarpeen, mutta periaatteessa toimii! mut: # 10%max gene amount in current adata as in the manual
+for i in range(len(hu)):
+    cr.pl.cluster_lineage( adata,model,adata.varm['terminal_lineage_drivers'][l2[i]].sort_values(ascending=False).index[:80], lineage=hu[i], 
+                          time_key="latent_time", show_progress_bar=False,save='cluster'+hu[i]+'_lineages'+'tikka'+date+'.png') #https://github.com/scverse/scanpy/issues/2341
+data=[]
+for i in range(len(hu)):
+    data.append(adata.uns['lineage_'+hu[i]+'_trend'].obs["clusters"])
+for i in range(len(hu)): # Write each DataFrame to separate CSV; you only need to check this [5_,1_]
+    data_i = data[i] #str(i)
+    data_i.to_csv('data' + hu[i]  + '.csv')
+ #%%
+for i in range(len(hu)):   
+    cr.pl.gene_trends(adata, model=model, data_key="X",genes=adata.varm['terminal_lineage_drivers'][l2[i]].sort_values(ascending=False).index[:18],ncols=2,lineages=hu[i], 
+                      time_key="dpt_pseudotime",same_plot=True,hide_cells=True,figsize=(15, 15),n_test_points=300,save='dpt gene trends li_'+hu[i]+'tikka'+date+'.png') #Do it with loop..
+for i in range(len(hu)):  
+    cr.pl.gene_trends(adata, model=model, data_key="X",genes=adata.varm['terminal_lineage_drivers'][l2[i]].sort_values(ascending=False).index[:18],ncols=2,lineages=hu[i], 
+                      time_key="latent_time",same_plot=True,hide_cells=True,figsize=(15, 15),n_test_points=300,save='latent gene trends li_'+hu[i]+'tikka'+date+'.png') 
+for i in range(len(hu)):   
+    cr.pl.gene_trends(adata, model=model, data_key="Ms",genes=adata.varm['terminal_lineage_drivers'][l2[i]].sort_values(ascending=False).index[:7],
+                      time_key="dpt_pseudotime",show_progress_bar=False,figsize=(15, 15),n_test_points=300,save='Ms dpt gene trends li_'+hu[i]+'tikka'+date+'.png') #Do it with loop..
+for i in range(len(hu)):  
+    cr.pl.gene_trends(adata, model=model, data_key="Ms",genes=adata.varm['terminal_lineage_drivers'][l2[i]].sort_values(ascending=False).index[:7],
+                      time_key="latent_time",show_progress_bar=False,figsize=(15, 15),n_test_points=300,save='Ms latent gene trends li_'+hu[i]+'tikka'+date+'.png')     
+
+#%% Toimii muttei aja, eli erikseen!
+for i in range(len(hu)):  
+    cr.pl.heatmap(adata,model,adata.varm['terminal_lineage_drivers'][l2[i]].sort_values(ascending=False).index[:30],time_key="dpt_pseudotime", lineages=hu[i], 
+                  show_absorption_probabilities=True, show_progress_bar=False, return_genes=True, save='heatmap_genes_dpt pseudotime '+hu[i]+'.png')
+for i in range(len(hu)):  
+    cr.pl.heatmap(adata,model,adata.varm['terminal_lineage_drivers'][l2[i]].sort_values(ascending=False).index[:30],
+                  lineages=hu[i], show_absorption_probabilities=True,  n_jobs=1, backend="loky",return_genes=True, save='heatmap_genes_latent time '+hu[i]+'.png')
+#%%sfg
+scv.tl.velocity_pseudotime(adata); scv.pl.scatter(adata, color='velocity_pseudotime', cmap='gnuplot', save='pseudo_'+'tikka'+date+'.png')    
+adata.uns['neighbors']['distances'] = adata.obsp['distances']; adata.uns['neighbors']['connectivities'] = adata.obsp['connectivities']
+scv.tl.paga(adata, groups='clusters'); df3 = scv.get_df(adata, 'paga/transitions_confidence').T
+df3.style.background_gradient(cmap='Blues').format('{:.2g}') #...
+scv.pl.paga(adata, basis='umap', size=150, alpha=.1, min_edge_width=2, node_size_scale=0.5,save='pseudo_paga_tikka'+date+'.png') 
+
+#%%
+scv.pl.velocity_embedding_stream(adata, basis='X_umap', save='dyn_mod_vel4_tikka281122e_smile.png')
+df4 = adata.var; df4 = df4[(df4['fit_likelihood'] > .1) & df4['velocity_genes'] == True]
+kwargs = dict(xscale='log', fontsize=16)
+with scv.GridSpec(ncols=3) as pl:
+    pl.hist(df4['fit_alpha'], xlabel='transcription rate', **kwargs)
+    pl.hist(df4['fit_beta'] * df4['fit_scaling'], xlabel='splicing rate', xticks=[.1, .4, 1], **kwargs)
+    pl.hist(df4['fit_gamma'], xlabel='degradation rate', xticks=[.1, .4, 1], **kwargs)    
+#%% Run this in the COMMAND LINE not as a cell (not work??)   
+pd.set_option("display.max_rows", None, "display.max_columns", None)
+scv.get_df(df4, 'fit*', dropna=True) #SEPARATELY!!
+#%%
+japs=scv.get_df(adata, 'fit*', dropna=True)
+japs.to_csv('fit_pt4_tikka'+date+'.csv') #% Does not print the grid..
+# https://github.com/matplotlib/matplotlib/issues/12447
+#%%Latent time
+scv.pl.scatter(adata, color='latent_time', color_map='gnuplot', size=80, save='latent_tikka'+date+'.png') #Does this calculation also take time?
+#%%Heatmap
+top_genes = adata.var['fit_likelihood'].sort_values(ascending=False).index
+scv.pl.heatmap(adata, var_names=top_genes[:10], sortby='latent_time', col_color='clusters', n_convolve=100, save='heatmap_tikka'+date+'.png') #~2min run..
+#%%Top-likelihood genes 
+scv.pl.scatter(adata, basis=top_genes[:10], ncols=5, frameon=False,save='topgenes_p1_tikka'+date+'.png')
+scv.pl.scatter(adata, basis=top_genes[:16], ncols=4, nrows=4,add_outline='fit_diff_kinetics',add_margin=2, legend_align_text=True, figsize=(22,33), save='top16genes_su plot_tikka'+date+'.png')
+scv.pl.scatter(adata, x='latent_time', y=top_genes[:16], ncols=4,nrows=4,add_margin=1,  #add_margin=0, right_margin=l,
+              add_outline='time vs spliced', figsize=(120,150), save='top16genes_ts plot_tikka'+date+'.png') #This worked yesterday...
+var_names = the_genes #[ 'Sox2', 'Igfbp5', 'Nphs1']
+scv.pl.scatter(adata, var_names, figsize=(150,120),frameon=True, save='scattere4_tikka'+date+'.png')
+#%% Toiminnee erikseen:
+scv.pl.scatter(adata, basis=top_genes[:20], figsize=(120,300),ncols=5, frameon=True,  save='topgeneasane_tikka'+date+'.png')
+scv.tl.rank_dynamical_genes(adata, groupby='clusters') #Rank genes by likelihoods per cluster. This ranks genes by their likelihood obtained from the dynamical model grouped by clusters specified in groupby.
+df5 = scv.get_df(adata, 'rank_dynamical_genes/names')
+df5.head(5); df5.to_csv('dynamical likelihood genes_tikka'+date+'.csv')
+for cluster in range(len(hu)): #10 is for clusters and the below ':5' or any number is for the number of genes
+    scv.pl.scatter(adata, df5.iloc[:,cluster][:5], ylabel=cluster, size=120, frameon=True,save='dynvelgen_eall_soxepit4_tikka'+date+'.png')
+print(adata.var['velocity_genes'].sum(), adata.n_vars) #top_genes = adata.var_names[adata.var.fit_likelihood.argsort()[::-1]]
+cr.pl.cluster_fates(adata, mode="heatmap",save='clusters_to_terminals heatmap_tikka'+date+'.png')
+
 #%% Monocle2: http://cole-trapnell-lab.github.io/monocle-release/docs_mobile/
 # BiocManager::install('monocle')
 library(Seurat);
